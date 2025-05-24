@@ -1,7 +1,10 @@
 ---
 title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
@@ -201,6 +204,20 @@ ggplot(map_data) +
 It can be seen from the map that high consumption municipalities are distributed across the country instead of being clustered in one location.
 
 
+### Clustering
+
+#### finding optimal K
+```{r}
+set.seed(123)
+
+res_v2 = funFEM(fd_obj_all_mun,K=2:5,model='AkjBk',init='kmeans',lambda=0,disp=TRUE)
+res_v2$allCriterions
+plot(res_v2$allCriterions$K,res_v2$allCriterions$bic,type='b',xlab='K',main='BIC')
+res_v2$cls
+```
+
+Optimal K was found to be 2.
+
 #### Clustering K = 2
 
 To identify distinct electricity consumption patters accross Lithuanian municiaplities, we employed performed k-means clustering with the AkjBk model, selecting $K=2$ based on Bayesian Information Criterion (BIC) optimization. The regularization parameter $\lambda$ was set to 0.
@@ -274,6 +291,100 @@ ggplot(map_clusters) +
 ```
 
 As can be seen in the map, municipalities in Cluster 1 are not clustered geographically.
+
+### Hypothesis testing
+
+In order to identify the time periods where differences between the two clusters occur, pointwise functional ANOVA was carried out with the 0.05 alpha level. Since only two clusters are being compared, post-hoc test result is not shown as it provides identical results to the pointwise ANOVA itself. 
+
+##### fANOVA
+
+#### function definition
+```{r}
+
+fANOVA.pointwise <- function(data, groups, t.seq, alpha = 0.05) {
+  if (length(groups) != ncol(data)) stop("Length of groups must match number of columns in data")
+  if (!is.factor(groups)) groups <- factor(groups)
+  library(dplyr)
+  n_time <- nrow(data)
+  n_groups <- length(levels(groups))
+  group_levels <- levels(groups)
+  pvals <- numeric(n_time)
+  mean.p <- matrix(NA, ncol = n_groups, nrow = n_time)
+  # Determine number of pairwise comparisons
+  combs <- combn(group_levels, 2)
+  perm <- ncol(combs)
+  Tukey.posthoc <- matrix(NA, ncol = perm, nrow = n_time)
+  colnames(Tukey.posthoc) <- apply(combs, 2, paste, collapse = " - ")
+  # Main loop: pointwise ANOVA and Tukey HSD
+  for (i in 1:n_time) {
+  dt <- data.frame(values = data[i, ], groups = groups)
+  av <- aov(values ~ groups, data = dt)
+  pvals[i] <- summary(av)[[1]]["Pr(>F)"][1,1]
+  mean.p[i, ] <- dt %>%
+  group_by(groups) %>%
+  summarise(mean_val = mean(values), .groups = "drop") %>%
+  pull(mean_val)
+  tukey_res <- TukeyHSD(av)$groups[, "p adj"]
+  Tukey.posthoc[i, ] <- tukey_res
+  }
+  overall_mean <- rowMeans(data)
+  ## --- Plotting --- ##
+  opar <- par(mfrow = c(2, 1), mar = c(4, 4, 3, 1))
+  # Plot ANOVA p-values
+  plot(t.seq, pvals, type = "l", lwd = 2, col = "darkred",
+  main = "Pointwise ANOVA p-values", xlab = "Time", ylab = "p-value", ylim = c(0, 1))
+  abline(h = alpha, col = "blue", lty = 2, lwd = 2)
+  # Plot group means
+  col_set <- rainbow(n_groups)
+  ylim_range <- range(c(mean.p, overall_mean)) * 1.05
+  plot(t.seq, overall_mean, type = "l", lwd = 2, col = "black",
+  main = "Group Mean Functions", xlab = "Time", ylab = "Mean", ylim = ylim_range)
+  for (j in 1:n_groups) {
+    lines(t.seq, mean.p[, j], col = col_set[j], lty = j + 1, lwd = 1.5)
+  }
+  legend("topright", legend = c("Overall", group_levels),
+  col = c("black", col_set), lty = c(1, 2:(n_groups + 1)),
+  lwd = c(2, rep(1.5, n_groups)))
+  par(opar)
+  ## --- Post-hoc Tukey plots --- ##
+  # opar2 <- par(mfrow = c(1, 1), ask = TRUE)
+  # for (i in 1:perm) {
+  # plot(t.seq, Tukey.posthoc[, i], type = "l", col = "purple", lwd = 2,
+  # main = paste("Tukey HSD p-values for", colnames(Tukey.posthoc)[i]),
+  # xlab = "Time", ylab = "p-value", ylim = c(0, 1))
+  # abline(h = alpha, col = "blue", lty = 2, lwd = 2)
+  # }
+  # par(opar2)
+  ## --- Return --- ##
+  # return(list(
+  #   p.values = pvals,
+  #   TukeyHSD = Tukey.posthoc,
+  #   group.means = mean.p,
+  #   overall.mean = overall_mean,
+  #   comparisons = colnames(Tukey.posthoc)
+  #   )
+  # )
+}
+```
+
+
+##### Identifying time periods that differ significantly
+```{r}
+time_grid <- seq(1, 12, length.out = 200)  # finer time points over months
+elec_eval <- eval.fd(time_grid, fd_obj_all_mun)
+# Center **each curve** separately
+elec_eval_centered <- apply(elec_eval, 2, function(x) x - mean(x))
+
+library(fda.usc)
+
+fANOVA.pointwise(
+  data = elec_eval_centered,
+  groups = as.factor(clusters),  # clusters from funFEM
+  t.seq = time_grid,
+  alpha = 0.05
+)
+
+```
 
 #### PCA analysis
 ##### Harmonics, PCA scores and Reconstrunctions
