@@ -1178,10 +1178,30 @@ plot(fosr.fit4, pages=1, scale=0)
 
 Four function-on-scalar regression models were compared:
 
-- Model 1: intercept + wages
-- Model 2: intercept + wages + commercial customers per person
-- Model 3: intercept + wages + commercial + residential customers per person
-- Model 4: intercept + wages + commercial + residential customers per person + unemployment
+- Model 1:
+
+$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \varepsilon_i(t)$$
+
+- Model 2: 
+
+$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \varepsilon_i(t)$$
+
+- Model 3:
+
+$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \beta_3(t) \cdot \text{Residential}_i + \varepsilon_i(t)$$
+
+- Model 4: 
+
+$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \beta_3(t) \cdot \text{Residential}_i + \beta_4(t) \cdot \text{Unemployment}_i + \varepsilon_i(t)$$
+
+- $Y_i(t)$ = Electricity consumption for municipality $i$ at time $t$
+- $\beta_0(t)$ = Intercept function (baseline seasonal consumption pattern)  
+- $\beta_j(t)$ = Time-varying coefficient functions for predictor $j$
+- $\text{Wages}_i$ = Standardized average wages in municipality $i$
+- $\text{Commercial}_i$ = Standardized commercial customers per person in municipality $i$
+- $\text{Residential}_i$ = Standardized residential customers per person in municipality $i$
+- $\text{Unemployment}_i$ = Standardized unemployment rate in municipality $i$
+- $\varepsilon_i(t)$ = Error function for municipality $i$ at time $t$
 
 Based on low p-values, all regressors are statistically significant.
 
@@ -1282,7 +1302,28 @@ From the plot we can see that wages has the biggest influence which rises toward
 
 #### Function-on-function regression model: unemployment (function), commercial/residential customer count per person (function), and wages (scalar)
 
-Next, we performed fnction-on-function regression, where not only the dependent variable but also the predictors were functions.
+Next, we performed function-on-function regression, where not only the dependent variable but also the predictors were functions.
+
+$$Y_i(t) = \beta_0(t) + \int_0^{12} \beta_1(t,s) \cdot \text{Commercial}_i(s) \, ds + \int_0^{12} \beta_2(t,s) \cdot \text{Residential}_i(s) \, ds$$
+
+$$+ \int_0^{12} \beta_3(t,s) \cdot \text{Unemployment}_i(s) \, ds + \int_0^{12} \beta_4(t,s) \cdot \text{UnemploymentVel}_i(s) \, ds$$
+
+$$+ \beta_5(t) \cdot \text{Wages}_i + \varepsilon_i(t)$$
+
+**Where:**
+- $Y_i(t)$ = Electricity consumption for municipality $i$ at time $t$
+- $\beta_0(t)$ = Intercept function (baseline seasonal consumption pattern)
+- $\beta_j(t,s)$ = Bivariate coefficient functions for functional predictors
+- $\beta_5(t)$ = Time-varying coefficient function for scalar predictor
+- $\text{Commercial}_i(s)$ = Commercial customers per person function for municipality $i$
+- $\text{Residential}_i(s)$ = Residential customers per person function for municipality $i$
+- $\text{Unemployment}_i(s)$ = Unemployment rate function for municipality $i$
+- $\text{UnemploymentVel}_i(s)$ = Unemployment velocity function for municipality $i$
+- $\text{Wages}_i$ = Standardized average wages (scalar) for municipality $i$
+- $\varepsilon_i(t)$ = Error function for municipality $i$ at time $t$
+- $s, t \in [0, 12]$ = Time points (months)
+
+Integration captures how predictor values at time $s$ affect response at time $t$.
 
 ##### Predictor standardization
 
