@@ -13,6 +13,7 @@ library(ggplot2)
 library(dplyr)
 library(lubridate)
 library(ggbreak)
+library(ggrepel)
 library(fda)
 library(fda.usc)
 library(rainbow)
@@ -32,18 +33,41 @@ library(refund.shiny)
 ```{r, results='hide'}
 set.seed(6558765)
 
-consumption_data <- read_parquet("fda_duomenys.parquet")
+consumption_data <- read_parquet("data/fda_duomenys.parquet")
 consumption_data$Suvartojimo_laikotarpis <- as.Date(consumption_data$Suvartojimo_laikotarpis)
 
 consumption_2024 <- consumption_data %>% filter(year(Suvartojimo_laikotarpis) == 2024)
 
-population <- read_excel("savivaldybes_populiacija.xlsx")
+population <- read_excel("data/savivaldybes_populiacija.xlsx")
 
 consumption_by_population_2024 <- consumption_2024 %>%
   left_join(population, by = "Savivaldybe")
   
 consumption_by_population_2024 <- consumption_by_population_2024 %>%
   mutate(kWh_per_person = Bendras_suvartojimas_mWh * 1000/ populiacija)
+```
+
+#### Exploring data
+```{r warning=FALSE}
+head(consumption_by_population_2024)
+
+plot_all_municipalities <- ggplot(consumption_by_population_2024, aes(
+  x = Suvartojimo_laikotarpis,
+  y = kWh_per_person,
+  group = Savivaldybe,
+  color = Savivaldybe
+)) +
+  geom_line(size = 0.3) +
+  geom_point(size = 0.1) +
+  labs(
+    title = "Monthly Electricity Consumption in Lithuania 2024 per person",
+    x = "Date",
+    y = "Consumption (kWh)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+plot_all_municipalities
 ```
 
 #### Smoothing
@@ -110,12 +134,204 @@ for (municipality in municipalities) {
 ```{r, warning = FALSE}
 # combining smoothed results
 smoothed_df <- bind_rows(smoothed_curves)
+
+# plotting all municipalities, I guess smoothing looks good?
+ggplot() +
+  geom_point(data = consumption_by_population_2024, aes(x = Month, y = kWh_per_person, color = Savivaldybe), alpha = 0.5) +
+  geom_line(data = smoothed_df, aes(x = Month, y = Consumption, color = Savivaldybe), linetype = "dashed") +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +  # converting 1-12 to month names
+  labs(
+    title = "Smoothed Electricity Consumption All Municipalities",
+    x = "Month",
+    y = "Electricity Consumption (MWh)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+#### PCA analysis
+##### Harmonics, PCA scores and Reconstrunctions
+
+```{r, warning = FALSE}
+# Prepare data matrix for all municipalities (wide format)
+energy_matrix <- consumption_by_population_2024 %>%
+  arrange(Savivaldybe, Month) %>%
+  dplyr::select(Savivaldybe, Month, kWh_per_person) %>%
+  pivot_wider(names_from = Savivaldybe, values_from = kWh_per_person) %>%
+  dplyr::select(-Month) %>% 
+  as.matrix()
+
+months <- 1:12
 ```
 
+```{r, warning = FALSE}
+# centering data by subtracting mean to concentrate on true seasonal consumption
+# patterns instead of just finding which municipality consumes more overall
 
+energy_matrix <- apply(energy_matrix, 2, function(x) x - mean(x))
+fd_all <- smooth.basis(months, energy_matrix, basis)$fd
+pca_results <- pca.fd(fd_all, nharm = 4, centerfns = TRUE)
+
+explained_var <- round(pca_results$varprop * 100, 1) 
+colors <- c("black", "red", "blue", "green")  
+line_types <- c(1, 2, 3, 4)  
+par(mar = c(5, 4, 6, 2))  # Increase top margin to make space for legend
+plot(pca_results$harmonics, main = "Harmonics (Functional PC)", 
+     xlab = "Months", ylab = "Amplitude", lty = line_types, col = colors)  
+
+par(xpd = TRUE)  # Allow plotting outside the plotting area
+legend("top", inset = c(0, -0.15), legend = paste("PC", 1:4, "-", explained_var[1:4], "%"),
+       col = colors, lty = line_types, cex = 0.9, horiz = TRUE, bty = "n")
+
+municipality_labels <- colnames(energy_matrix)
+x_limits <- range(pca_results$scores[,1]) * 1.4
+y_limits <- range(pca_results$scores[,2]) * 1.1
+
+plot(pca_results$scores[,1], pca_results$scores[,2],
+     xlab = "PC1 Scores", ylab = "PC2 Scores",
+     main = "PCA Scores for Municipalities",
+     pch = 16, col = rgb(0, 0, 0, 0.5), cex = 0.8,
+     xlim = x_limits, ylim = y_limits, xaxt = "n")
+
+x_ticks <- pretty(pca_results$scores[,1])  
+x_labels <- format(x_ticks, big.mark = ",", scientific = FALSE)  
+axis(1, at = x_ticks, labels = x_labels)
+text_positions <- ifelse(pca_results$scores[,2] > quantile(pca_results$scores[,2], 0.9), 3, 4)
+label_indices <- abs(pca_results$scores[,1]) > quantile(abs(pca_results$scores[,1]), 0.85) |
+                 abs(pca_results$scores[,2]) > quantile(abs(pca_results$scores[,2]), 0.85)
+text(pca_results$scores[,1], pca_results$scores[,2],
+     labels = ifelse(label_indices, municipality_labels, ""), pos = text_positions, cex = 0.6)
+
+par(mfrow = c(2,2), mar = c(4, 4, 3, 1))  
+
+time_grid <- seq(1, 12, length.out = 100)  
+ylim_range <- range(eval.fd(time_grid, fd_all))  
+
+for(i in 1:4) {
+  pc_curve <- pca_results$meanfd
+  
+  for(j in 1:i) {
+    pc_curve <- pc_curve + pca_results$scores[1, j] * pca_results$harmonics[j]
+  }
+  
+  plot(time_grid, eval.fd(time_grid, pc_curve), type = "l",
+       ylim = ylim_range, main = paste(i, "PC Reconstruction"),
+       xlab = "Time (Months)", ylab = "Consumption", col = "black", lwd = 2)
+  
+  lines(time_grid, eval.fd(time_grid, fd_all[1]), col = "red", lwd = 2, lty = 2)
+  
+  legend("bottomright", legend = c("Reconstructed", "Original"), col = c("black", "red"), 
+         lty = c(1, 2), bty = "n", cex = 0.8)
+}
+```
+Harmonics (Functional PC) plot:
+
+PC1 captures a broad seasonal trend, reflecting the overall winter-summer consumption cycle.
+PC2 describes more complex seasonal patterns, distinguishing municipalities with two seasonal peaks or
+dips across the year.
+PC3 captures a gradual increase in consumption toward the end of the year, highlighting municipalities
+where consumption steadily rises into autumn and winter.
+PC4 represents smaller local timing adjustments within the seasonal cycle.
+
+Reconstruction plots:
+
+The first principal component alone captures the main seasonal trend.
+Using all four principal components, the reconstructed curve nearly perfectly matches the original,
+showing that the four components can explain the variability quite precise.
+
+```{r, warning = FALSE}
+
+municipalities_scores <- data.frame(
+  PC1 = pca_results$scores[,1],
+  PC2 =  pca_results$scores[,2],
+  Municipality = municipality_labels
+)
+
+# Color by PC1
+ggplot(municipalities_scores, aes(x = PC1, y = PC2, label = Municipality, color = PC1)) +
+  geom_point(size = 2.5) +
+  geom_text_repel(size = 3, max.overlaps = 20, box.padding = 0.5, segment.color = "grey50") +  # better labels
+  scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(
+    title = "PC1: Seasonal U-shape Strength | PC2: Complex seasonality Shift",
+    x = "PC1 Score (Seasonal U-shape Strength)",
+    y = "PC2 Score (Complex seasonality)",
+    color = "PC1 Score"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "right"
+  )
+```
+Seasonal U-shape Strength vs. Complex seasonality Shift plot:
+
+Most municipalities cluster near the center of the PC1–PC2 space, indicating broadly similar seasonal
+consumption patterns in 2024.
+Elektrėnų sav. stands out with extreme seasonality, showing strong winter and summer peaks compared
+to others.
+Tourism-affected municipalities like Neringos and Palangos m. sav. deviate, exhibiting alternative
+seasonal profiles.
+
+##### Localizing PCs effects with VARIMAX rotation
+
+```{r, warning = FALSE}
+
+harmonics_matrix <- eval.fd(time_range, pca_results$harmonics)
+varimax_result <- varimax(harmonics_matrix)
+harmonics_varimax <- varimax_result$loadings
+
+# Re-project municipalities' scores
+rotated_scores <- as.matrix(pca_results$scores[, 1:4]) %*% varimax_result$rotmat
+
+# Create new dataframe
+municipalities_rotated <- data.frame(
+  RC1 = rotated_scores[,1],
+  RC2 = rotated_scores[,2],
+  Municipality = municipality_labels
+)
+
+ggplot(municipalities_rotated, aes(x = RC1, y = RC2, label = Municipality, color = RC1)) +
+  geom_point(size = 2.5) +
+  geom_text_repel(size = 3, max.overlaps = 20, box.padding = 0.5, segment.color = "grey50") +  # better labels
+  scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(
+    title = "Varimax rotated PC1 and PC2",
+    x = "Rotated PC1 Score",
+    y = "Rotated PC2 Score",
+    color = "RC1 Score"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "right"
+  )
+```
+```{r, warning = FALSE}
+
+mean_curve <- rowMeans(eval.fd(time_range, pca_results$meanfd))
+
+amplification_factor <- 500  # Might need tuning
+
+par(mfrow = c(2,2), mar = c(4,4,3,1))  # 2x2 layout
+
+for (i in 1:4) {
+  deform_plus <- mean_curve + harmonics_varimax[,i] * amplification_factor
+  deform_minus <- mean_curve - harmonics_varimax[,i] * amplification_factor
+  
+  plot(time_range, mean_curve, type = "l", lwd = 2, ylim = range(c(deform_plus, deform_minus, mean_curve)),
+       main = paste("Rot. PC", i),
+       xlab = "Month", ylab = "Consumption")
+  lines(time_range, deform_plus, lty = 2)
+  points(time_range, deform_minus, pch = 3)  # plus signs
+}
+
+```
+Because the consumption data were already normalized per person and centered per municipality,
+the rotated components mostly captured simple monotonic trends with limited seasonal structure.
+Therefore, for practical interpretation, we rely on the unrotated principal components
+which better reflect the true seasonal variation across municipalities.
 
 # Regression
-
 ### Preparing functional data (unemployment)
 
 ```{r}
