@@ -5,7 +5,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
 
 library(arrow)
 library(ggplot2)
@@ -172,7 +172,7 @@ To evaluate whether the energy consumption is related with geographical location
 ```{r, warning=FALSE}
 library(sf) 
 
-lt_map <- st_read("municipalities.geojson")
+lt_map <- st_read("data/municipalities.geojson")
 lt_map$name <- lt_map$name %>%
   gsub("miesto", "m.", .) %>%
   gsub("rajono", "r.", .) %>%
@@ -200,120 +200,6 @@ ggplot(map_data) +
 
 It can be seen from the map that high consumption municipalities are distributed across the country instead of being clustered in one location.
 
-Additionally, to examine seasonal variations in electricity consumption, three maps were created: winter average consumption, summer average consumption, and the seasonal difference between winter and summer.
-
-```{r}
-# seasonal averages
-winter_summer_data <- consumption_by_population_2024 %>%
-  mutate(season = case_when(
-    Month %in% c(12, 1, 2) ~ "Winter",
-    Month %in% c(6, 7, 8) ~ "Summer",
-    TRUE ~ "Other"
-  )) %>%
-  filter(season %in% c("Winter", "Summer")) %>%
-  group_by(Savivaldybe, season) %>%
-  summarize(avg_consumption = mean(kWh_per_person, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = season, values_from = avg_consumption) %>%
-  mutate(seasonal_difference = Winter - Summer,
-         seasonal_ratio = Winter / Summer)
-
-map_seasonal <- lt_map %>%
-  left_join(winter_summer_data, by = c("name" = "Savivaldybe"))
-
-# global limits for consumption values
-consumption_min <- min(c(map_seasonal$Winter, map_seasonal$Summer), na.rm = TRUE)
-consumption_max <- max(c(map_seasonal$Winter, map_seasonal$Summer), na.rm = TRUE)
-
-# global limits for difference values
-diff_min <- min(map_seasonal$seasonal_difference, na.rm = TRUE)
-diff_max <- max(map_seasonal$seasonal_difference, na.rm = TRUE)
-
-# Winter consumption
-winter_map <- ggplot(map_seasonal) +
-  geom_sf(aes(fill = Winter), color = "white", size = 0.2) +
-  scale_fill_viridis_c(option = "inferno", 
-                      na.value = "lightgrey",
-                      name = "kWh/person",
-                      limits = c(consumption_min, consumption_max)) +
-  labs(title = "Winter Electricity Consumption",
-       subtitle = "Average for December, January, February") +
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12)
-  )
-
-print(winter_map)
-
-# summer consumption map
-summer_map <- ggplot(map_seasonal) +
-  geom_sf(aes(fill = Summer), color = "white", size = 0.2) +
-  scale_fill_viridis_c(option = "inferno",  
-                      na.value = "lightgrey",
-                      name = "kWh/person",
-                      limits = c(consumption_min, consumption_max)) +
-  labs(title = "Summer Electricity Consumption",
-       subtitle = "Average for June, July, August") +
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12)
-  )
-
-print(summer_map)
-
-# seasonal difference map 
-diff_map <- ggplot(map_seasonal) +
-  geom_sf(aes(fill = seasonal_difference), color = "white", size = 0.2) +
-  scale_fill_viridis_c(option = "plasma", 
-                      na.value = "lightgrey",
-                      name = "Winter - Summer\n(kWh/person)",
-                      limits = c(diff_min, diff_max)) +
-  labs(title = "Seasonal Variation in Electricity Consumption",
-       subtitle = "Difference Between Winter and Summer Averages") +
-  theme_minimal() +
-  theme(
-    axis.text = element_text(size = 12),
-    axis.title = element_text(size = 14),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 12)
-  )
-
-print(diff_map)
-```
-
-```{r}
-# municipalities with biggest seasonal differences
-top_diff_municipalities <- map_seasonal %>%
-  st_set_geometry(NULL) %>%
-  dplyr::select(name, seasonal_difference) %>%
-  filter(!is.na(seasonal_difference)) %>%
-  arrange(desc(seasonal_difference)) %>%
-  slice_head(n = 3)
-
-# municipalities with lowest seasonal differences
-bottom_diff_municipalities <- map_seasonal %>%
-  st_set_geometry(NULL) %>%
-  dplyr::select(name, seasonal_difference) %>%
-  filter(!is.na(seasonal_difference)) %>%
-  arrange(seasonal_difference) %>%
-  slice_head(n = 3)
-
-cat("Municipalities with highest seasonal differences (Winter - Summer):\n")
-print(top_diff_municipalities)
-
-cat("\nMunicipalities with lowest seasonal differences (Winter - Summer):\n")
-print(bottom_diff_municipalities)
-```
-
-Municipalities with:
-
-- Largest increase of consumption in Winter: Elektrėnai, Vilnius district, Anykščiai
-- Largest decrease of consumption in Winter: Pakruojis, Palanga, Neringa.
 
 #### Clustering K = 2
 
