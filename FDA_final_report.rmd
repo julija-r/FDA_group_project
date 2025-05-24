@@ -1,5 +1,5 @@
 ---
-title: "regression"
+title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
 output:
   html_document: default
@@ -372,7 +372,7 @@ consumption_fd <- Data2fd(eval_points, t(as.matrix(df$consumption)), consumption
 
 
 ```{r}
-unemployment_2024 <- read.csv("nedarbas.csv")
+unemployment_2024 <- read.csv("data/nedarbas.csv")
 
 matched_unemployment <- unemployment_2024 %>%
   filter(savivaldybe %in% df$Savivaldybe)
@@ -402,7 +402,7 @@ colnames(df$unemployment) <- colnames(df$consumption)
 ### Preparing functional data (commercial/residential customer count per person)
 
 ```{r}
-customer_types <- read_parquet("fda_sutart_kiekis.parquet")
+customer_types <- read_parquet("data/fda_sutart_kiekis.parquet")
 
 customer_types$date <- as.Date(substr(customer_types$Suvartojimo_laikotarpis, 1, 10))
 
@@ -593,9 +593,6 @@ legend("topright",
 
 ```
 
-
-
-
 ## Function-on-function regression model: unemployment (function), commercial/residential customer count per person (function), and wages (scalar)
 
 ### Predictor standardization
@@ -765,7 +762,6 @@ unemployment_vel_betafdPar <- fdPar(unemployment_basis, 2, lambda = unemployment
 wages_betafdPar <- fdPar(wages_basis, 2, lambda = wages_params$lambda)
 
 ```
-
 
 
 ```{r}
