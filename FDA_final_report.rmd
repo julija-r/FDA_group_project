@@ -1,13 +1,12 @@
 ---
 title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
-output:
-  html_document: default
-  pdf_document: default
+output: pdf_document
 ---
 
+```{r setup, include=FALSE, warning=FALSE, results='hide'}
+knitr::opts_chunk$set(echo = TRUE)
 
-```{r setup, message=FALSE, warning=FALSE, results='hide'}
 library(arrow)
 library(ggplot2)
 library(dplyr)
@@ -148,6 +147,248 @@ ggplot() +
   theme_minimal() +
   theme(legend.position = "none")
 ```
+
+```{r}
+consumption_summary <- consumption_by_population_2024 %>%
+  group_by(Savivaldybe) %>%
+  summarise(yearly_consumption_per_person = sum(kWh_per_person, na.rm = TRUE)) 
+
+top_municipalities <- consumption_summary %>%
+  ungroup() %>%
+  arrange(desc(yearly_consumption_per_person)) %>%
+  mutate(Rank = row_number()) %>%
+  slice(1:10) %>%
+  dplyr::select(Rank, Savivaldybe, yearly_consumption_per_person)
+
+kable(top_municipalities, 
+      col.names = c("Rank", "Municipality", "Yearly Consumption (kWh/person)"),
+      caption = "Top 10 Municipalities by Total Electricity Consumption per Person in 2024")
+
+```
+Municipality with highest energy consumption per person is Kazlų Rūda, followed by Akmenė and Elektrėnai, which is likely due to significant industrial activity in these municipalities.
+
+To evaluate whether the energy consumption is related with geographical location, average consumption per person was plotted on the Lithuanian municipality map.
+
+```{r, warning=FALSE}
+library(sf) 
+
+lt_map <- st_read("municipalities.geojson")
+lt_map$name <- lt_map$name %>%
+  gsub("miesto", "m.", .) %>%
+  gsub("rajono", "r.", .) %>%
+  gsub("savivaldybė", "sav.", .)
+
+map_data <- lt_map %>%
+  left_join(consumption_summary, by = c("name" = "Savivaldybe"))
+```
+
+```{r}
+ggplot(map_data) +
+  geom_sf(aes(fill = yearly_consumption_per_person), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "plasma", na.value = "lightgrey",
+                      name = "Consumption\n(kWh/person)") +
+  labs(title = "Yearly Electricity Consumption per Person by Municipality") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  )
+
+```
+
+It can be seen from the map that high consumption municipalities are distributed across the country instead of being clustered in one location.
+
+Additionally, to examine seasonal variations in electricity consumption, three maps were created: winter average consumption, summer average consumption, and the seasonal difference between winter and summer.
+
+```{r}
+# seasonal averages
+winter_summer_data <- consumption_by_population_2024 %>%
+  mutate(season = case_when(
+    Month %in% c(12, 1, 2) ~ "Winter",
+    Month %in% c(6, 7, 8) ~ "Summer",
+    TRUE ~ "Other"
+  )) %>%
+  filter(season %in% c("Winter", "Summer")) %>%
+  group_by(Savivaldybe, season) %>%
+  summarize(avg_consumption = mean(kWh_per_person, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = season, values_from = avg_consumption) %>%
+  mutate(seasonal_difference = Winter - Summer,
+         seasonal_ratio = Winter / Summer)
+
+map_seasonal <- lt_map %>%
+  left_join(winter_summer_data, by = c("name" = "Savivaldybe"))
+
+# global limits for consumption values
+consumption_min <- min(c(map_seasonal$Winter, map_seasonal$Summer), na.rm = TRUE)
+consumption_max <- max(c(map_seasonal$Winter, map_seasonal$Summer), na.rm = TRUE)
+
+# global limits for difference values
+diff_min <- min(map_seasonal$seasonal_difference, na.rm = TRUE)
+diff_max <- max(map_seasonal$seasonal_difference, na.rm = TRUE)
+
+# Winter consumption
+winter_map <- ggplot(map_seasonal) +
+  geom_sf(aes(fill = Winter), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "inferno", 
+                      na.value = "lightgrey",
+                      name = "kWh/person",
+                      limits = c(consumption_min, consumption_max)) +
+  labs(title = "Winter Electricity Consumption",
+       subtitle = "Average for December, January, February") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  )
+
+print(winter_map)
+
+# summer consumption map
+summer_map <- ggplot(map_seasonal) +
+  geom_sf(aes(fill = Summer), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "inferno",  
+                      na.value = "lightgrey",
+                      name = "kWh/person",
+                      limits = c(consumption_min, consumption_max)) +
+  labs(title = "Summer Electricity Consumption",
+       subtitle = "Average for June, July, August") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  )
+
+print(summer_map)
+
+# seasonal difference map 
+diff_map <- ggplot(map_seasonal) +
+  geom_sf(aes(fill = seasonal_difference), color = "white", size = 0.2) +
+  scale_fill_viridis_c(option = "plasma", 
+                      na.value = "lightgrey",
+                      name = "Winter - Summer\n(kWh/person)",
+                      limits = c(diff_min, diff_max)) +
+  labs(title = "Seasonal Variation in Electricity Consumption",
+       subtitle = "Difference Between Winter and Summer Averages") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  )
+
+print(diff_map)
+```
+
+```{r}
+# municipalities with biggest seasonal differences
+top_diff_municipalities <- map_seasonal %>%
+  st_set_geometry(NULL) %>%
+  dplyr::select(name, seasonal_difference) %>%
+  filter(!is.na(seasonal_difference)) %>%
+  arrange(desc(seasonal_difference)) %>%
+  slice_head(n = 3)
+
+# municipalities with lowest seasonal differences
+bottom_diff_municipalities <- map_seasonal %>%
+  st_set_geometry(NULL) %>%
+  dplyr::select(name, seasonal_difference) %>%
+  filter(!is.na(seasonal_difference)) %>%
+  arrange(seasonal_difference) %>%
+  slice_head(n = 3)
+
+cat("Municipalities with highest seasonal differences (Winter - Summer):\n")
+print(top_diff_municipalities)
+
+cat("\nMunicipalities with lowest seasonal differences (Winter - Summer):\n")
+print(bottom_diff_municipalities)
+```
+
+Municipalities with:
+
+- Largest increase of consumption in Winter: Elektrėnai, Vilnius district, Anykščiai
+- Largest decrease of consumption in Winter: Pakruojis, Palanga, Neringa.
+
+#### Clustering K = 2
+
+To identify distinct electricity consumption patters accross Lithuanian municiaplities, we employed performed k-means clustering with the AkjBk model, selecting $K=2$ based on Bayesian Information Criterion (BIC) optimization. The regularization parameter $\lambda$ was set to 0.
+
+```{r}
+library(funFEM)
+
+# Clustering
+res_electricity <- funFEM(fd_obj_all_mun, K = 2, model = "AkjBk", init = "kmeans", lambda = 0, disp = TRUE)
+
+# Cluster mean curves
+fdmeans_electricity <- fd_obj_all_mun
+fdmeans_electricity$coefs <- t(res_electricity$prms$my)
+
+# Cluster assignment 
+municipality_clusters <- res_electricity$cls
+municipality_names <- colnames(energy_matrix)
+
+cluster_table <- data.frame(
+  Savivaldybe = municipality_names,
+  Cluster = municipality_clusters
+)
+print(cluster_table)
+
+consumption_by_population_2024 <- consumption_by_population_2024 %>%
+  left_join(cluster_table, by = "Savivaldybe")
+
+# Colours
+clusters <- res_electricity$cls
+n_clusters <- length(unique(clusters))
+cluster_colors <- c("steelblue", "tomato")
+
+
+# Plot all curves colored by cluster 
+plot(fd_obj_all_mun, col = adjustcolor(cluster_colors[clusters], alpha.f = 0.4),
+     main = "Electricity Consumption: Individuals + Cluster Means",
+     xlab = "Month", ylab = "kWh per person", lwd = 1, xaxt = "n")
+axis(1, at = 1:12, labels = month.abb)
+
+# adding mean curves per cluster
+for (i in 1:n_clusters) {
+  lines(fdmeans_electricity[i], col = cluster_colors[i], lwd = 2)
+}
+
+```
+
+```{r}
+# Cluster map
+map_clusters <- lt_map %>%
+  left_join(cluster_table, by = c("name" = "Savivaldybe"))
+
+map_clusters <- map_clusters %>%
+  filter(!is.na(Cluster))
+
+cluster_palette <- c("steelblue", "tomato")
+
+ggplot(map_clusters) +
+  geom_sf(aes(fill = factor(Cluster)), color = "white", size = 0.2) +
+  scale_fill_manual(values = cluster_palette, 
+                    name = "Cluster",
+                    labels = c("1", "2")) +
+  labs(title = "Electricity Consumption Clusters by Municipality",
+       subtitle = "Based on Functional Data Analysis of 2024 Consumption Patterns") +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  )
+```
+
+As can be seen in the map, municipalities in Cluster 1 are not clustered geographically.
+
 #### PCA analysis
 ##### Harmonics, PCA scores and Reconstrunctions
 
@@ -223,6 +464,7 @@ for(i in 1:4) {
          lty = c(1, 2), bty = "n", cex = 0.8)
 }
 ```
+
 Harmonics (Functional PC) plot:
 
 PC1 captures a broad seasonal trend, reflecting the overall winter-summer consumption cycle.
@@ -263,6 +505,7 @@ ggplot(municipalities_scores, aes(x = PC1, y = PC2, label = Municipality, color 
     legend.position = "right"
   )
 ```
+
 Seasonal U-shape Strength vs. Complex seasonality Shift plot:
 
 Most municipalities cluster near the center of the PC1–PC2 space, indicating broadly similar seasonal
@@ -306,6 +549,7 @@ ggplot(municipalities_rotated, aes(x = RC1, y = RC2, label = Municipality, color
     legend.position = "right"
   )
 ```
+
 ```{r, warning = FALSE}
 
 mean_curve <- rowMeans(eval.fd(time_range, pca_results$meanfd))
@@ -326,13 +570,540 @@ for (i in 1:4) {
 }
 
 ```
+
 Because the consumption data were already normalized per person and centered per municipality,
 the rotated components mostly captured simple monotonic trends with limited seasonal structure.
 Therefore, for practical interpretation, we rely on the unrotated principal components
 which better reflect the true seasonal variation across municipalities.
 
-# Regression
-### Preparing functional data (unemployment)
+### Exploratory data analysis
+
+```{r}
+data_list <- split(consumption_by_population_2024, consumption_by_population_2024$Savivaldybe)
+
+fd_list <- lapply(data_list, function(df) {
+  # converting to functional data
+  smooth_fd <- smooth.basis(df$Month, df$kWh_per_person, fdPar(basis, 2))$fd
+  
+  return(smooth_fd)
+})
+
+# Combine coefficient matrices from each municipality
+fd_coefs <- do.call(cbind, lapply(fd_list, function(fd) fd$coefs))
+
+# Set column names as municipality names
+colnames(fd_coefs) <- names(data_list)
+
+# Rebuild the multivariate functional data object
+smooth_fd <- fd(coef = fd_coefs, basisobj = basis)
+
+municipality_names <- colnames(smooth_fd$coefs)
+
+cluster_mapping <- setNames(cluster_table$Cluster, cluster_table$Savivaldybe)
+
+# municipality indices for each cluster
+cluster1_indices <- which(municipality_names %in% names(cluster_mapping)[cluster_mapping == 1])
+cluster2_indices <- which(municipality_names %in% names(cluster_mapping)[cluster_mapping == 2])
+
+cluster1_fd <- smooth_fd[cluster1_indices]
+cluster2_fd <- smooth_fd[cluster2_indices]
+```
+
+#### Derivatives (velocity and acceleration)
+
+First derivative shows the rate of change of electricity consumption (how fast consumption is increasing or decreasing). The second derivative shows acceleration or curvature (how fast the rate of change is changing).
+
+```{r}
+# Cluster 1
+deriv1_c1 <- deriv.fd(cluster1_fd, 1) # first derivative
+deriv2_c1 <- deriv.fd(cluster1_fd, 2) # second derivatives
+
+# Cluster 2
+deriv1_c2 <- deriv.fd(cluster2_fd, 1)
+deriv2_c2 <- deriv.fd(cluster2_fd, 2)
+
+time_grid <- seq(1, 12, length.out = 100)
+
+par(mfrow=c(3,2), mar=c(4,1,3,1))
+
+# Original curves
+# Cluster 1
+plot(cluster1_fd, xlab="Month", ylab="Consumption", 
+     main="Cluster 1: Original Curves", col="gray70", lwd=0.5)
+lines(mean.fd(cluster1_fd), col="blue", lwd=2)
+
+# Cluster 2
+plot(cluster2_fd, xlab="Month", ylab="Consumption", 
+     main="Cluster 2: Original Curves", col="gray70", lwd=0.5)
+lines(mean.fd(cluster2_fd), col="red", lwd=2)
+
+# First derivatives (velocity)
+# Cluster 1
+plot(deriv1_c1, xlab="Month", ylab="Rate of Change", 
+     main="Cluster 1: First Derivatives", col="gray70", lwd=0.5)
+lines(mean.fd(deriv1_c1), col="blue", lwd=2)
+abline(h=0, lty=3)
+
+# Cluster 2
+plot(deriv1_c2, xlab="Month", ylab="Rate of Change", 
+     main="Cluster 2: First Derivatives", col="gray70", lwd=0.5)
+lines(mean.fd(deriv1_c2), col="red", lwd=2)
+abline(h=0, lty=3)
+
+# Second derivatives (acceleration)
+# Cluster 1
+plot(deriv2_c1, xlab="Month", ylab="Acceleration", 
+     main="Cluster 1: Second Derivatives", col="gray70", lwd=0.5)
+lines(mean.fd(deriv2_c1), col="blue", lwd=2)
+abline(h=0, lty=3)
+
+# Cluster 2
+plot(deriv2_c2, xlab="Month", ylab="Acceleration", 
+     main="Cluster 2: Second Derivatives", col="gray70", lwd=0.5)
+lines(mean.fd(deriv2_c2), col="red", lwd=2)
+abline(h=0, lty=3)
+```
+
+
+Two municipalities in Cluster 1 have unusually high first and second derivative values at December. 
+
+```{r, warning=FALSE}
+# find the first and second derivatives at month 12 for all municipalities in Cluster 1
+month_12 <- 12
+time_for_eval <- month_12
+
+deriv1_values <- eval.fd(time_for_eval, deriv1_c1)
+deriv2_values <- eval.fd(time_for_eval, deriv2_c1)
+
+deriv1_values <- as.numeric(deriv1_values)
+deriv2_values <- as.numeric(deriv2_values)
+
+# data frame with municipalities and their derivative values
+cluster1_municipalities <- colnames(cluster1_fd$coefs)
+derivatives_df <- data.frame(
+  Municipality = cluster1_municipalities,
+  First_Derivative = deriv1_values,
+  Second_Derivative = deriv2_values
+)
+
+derivatives_df <- na.omit(derivatives_df)
+
+# sort by first derivative
+derivatives_sorted_first <- derivatives_df[order(derivatives_df$First_Derivative, decreasing = TRUE), ]
+# sort by second derivative
+derivatives_sorted_second <- derivatives_df[order(derivatives_df$Second_Derivative, decreasing = TRUE), ]
+
+# top municipalities by first derivative
+cat("Top municipalities in Cluster 1 by First Derivative at December:\n")
+print(head(derivatives_sorted_first, 5))
+
+# Print top municipalities by second derivative
+cat("\nTop municipalities in Cluster 1 by Second Derivative at December:\n")
+print(head(derivatives_sorted_second, 5))
+
+```
+
+The two municipalities with high first and second derivative values at December are two coastal resorts, Neringa and Palanga.
+
+```{r}
+# municipalities to highlight
+highlight_municipalities <- c("Neringos sav.", "Palangos m. sav.")
+
+cluster1_municipalities <- colnames(cluster1_fd$coefs)
+highlight_indices <- match(highlight_municipalities, cluster1_municipalities)
+
+par(mfrow=c(1,3), mar=c(4,4,3,2), oma=c(0,0,2,0), pty="s")
+
+# 1. Original curves
+plot(cluster1_fd, col="lightgray", lwd=0.5, 
+     main="Cluster 1: Original Curves",
+     xlab="Month", ylab="Consumption per Person (kWh)")
+lines(mean.fd(cluster1_fd), col="blue", lwd=2)
+
+if(!is.na(highlight_indices[1])) {
+  lines(cluster1_fd[highlight_indices[1]], col="darkred", lwd=2)
+}
+
+if(!is.na(highlight_indices[2])) {
+  lines(cluster1_fd[highlight_indices[2]], col="darkgreen", lwd=2)
+}
+grid()
+
+# 2. First derivatives
+plot(deriv1_c1, col="lightgray", lwd=0.5, 
+     main="Cluster 1: First Derivatives",
+     xlab="Month", ylab="Rate of Change (kWh/month)")
+lines(mean.fd(deriv1_c1), col="blue", lwd=2)
+abline(h=0, lty=2)
+
+if(!is.na(highlight_indices[1])) {
+  lines(deriv1_c1[highlight_indices[1]], col="darkred", lwd=2)
+}
+
+if(!is.na(highlight_indices[2])) {
+  lines(deriv1_c1[highlight_indices[2]], col="darkgreen", lwd=2)
+}
+grid()
+
+# 3. Second derivatives
+plot(deriv2_c1, col="lightgray", lwd=0.5, 
+     main="Cluster 1: Second Derivatives",
+     xlab="Month", ylab="Acceleration (kWh/month2)")
+lines(mean.fd(deriv2_c1), col="blue", lwd=2)
+abline(h=0, lty=2)
+
+if(!is.na(highlight_indices[1])) {
+  lines(deriv2_c1[highlight_indices[1]], col="darkred", lwd=2)
+}
+
+if(!is.na(highlight_indices[2])) {
+  lines(deriv2_c1[highlight_indices[2]], col="darkgreen", lwd=2)
+}
+grid()
+
+mtext("Electricity Consumption Dynamics for Cluster 1", outer=TRUE, cex=1.5)
+
+legend("topleft", 
+       legend=c("All Municipalities", "Cluster Mean", highlight_municipalities),
+       col=c("lightgray", "blue", "darkred", "darkgreen"),
+       lwd=c(0.5, 2, 2, 2),
+       cex=0.8)
+```
+
+Neringa and Palanga show more pronounced seasonal variation that the rest of the municipalities in Cluster 1 and are similar to each other. The rate of change for both highlighted municipalities becomes dramatically positive in December, indicating a rapid increase in consumption. They also show stronger positive rates at the end of spring and the beginning of summer, indicating that energy consumption increases rapidly during this time. These patterns suggest that Neringa and Palanga (both coastal resort towns) have distinctive seasonal electricity consumption behaviors with sharper seasonal transitions. This observation could be explained by the fact that both Neringa and Palanga tourism-oriented coastal areas, where seasonal population changes and tourism patterns strongly influence electricity consumption, especially during summer and around winter holidays.
+
+#### Point-wise mean and standard deviation
+
+##### All Municipalities
+
+To understand the central tendency and variability of electricity consumption across different municipalities, we calculated point-wise mean and standard deviation. This approach computes statistical measures at each time point throughout the year. 
+
+Additionallym, to analyze the centrality and variability measures further and check cluster homogeniety, we performed point-wise mean and standard deviation calculations for the two clusters separately. 
+
+```{r, warning = FALSE}
+# elementary pointwise mean and standard deviation
+mean_energy = mean.fd(smooth_fd)
+stddev_energy = std.fd(smooth_fd)
+
+
+par(mfrow=c(1,3), pty="s")
+
+# Plot all
+plot(smooth_fd, main = "All Municipalities", xlab = "Month", ylab = "Energy Consumption per Person (kWh)", 
+  ylim = c(0, 800), lty = 1, col = "gray80", lwd = 1)
+
+# elementary pointwise mean and standard deviation
+mean_energy = mean.fd(smooth_fd)
+stddev_energy = std.fd(smooth_fd)
+
+lines(mean_energy, lwd=2, lty=1, col=2)
+lines(stddev_energy, lwd=2, lty=1, col=4)
+
+lines(mean_energy-stddev_energy, lwd=2, lty=1, col=6)
+lines(mean_energy+stddev_energy, lwd=2, lty=1, col=6)
+
+lines(mean_energy-2*stddev_energy, lwd=2, lty=1, col=8)
+lines(mean_energy+2*stddev_energy, lwd=2, lty=1, col=8)
+
+# plot cluster 1
+plot(cluster1_fd, main = "Cluster 1", xlab = "Month", ylab = "Energy Consumption per Person (kWh)", 
+  ylim = c(0, 800), lty = 1, col = "gray80", lwd = 1)
+
+# elementary pointwise mean and standard deviation
+mean_energy = mean.fd(cluster1_fd)
+stddev_energy = std.fd(cluster1_fd)
+
+lines(mean_energy, lwd=2, lty=1, col=2)
+lines(stddev_energy, lwd=2, lty=1, col=4)
+
+lines(mean_energy-stddev_energy, lwd=2, lty=1, col=6)
+lines(mean_energy+stddev_energy, lwd=2, lty=1, col=6)
+
+lines(mean_energy-2*stddev_energy, lwd=2, lty=1, col=8)
+lines(mean_energy+2*stddev_energy, lwd=2, lty=1, col=8)
+
+# plot cluster 2
+plot(cluster2_fd, main = "Cluster 2", xlab = "Month", ylab = "Energy Consumption per Person (kWh)", 
+  ylim = c(0, 800), lty = 1, col = "gray80", lwd = 1)
+
+# elementary pointwise mean and standard deviation
+mean_energy = mean.fd(cluster2_fd)
+stddev_energy = std.fd(cluster2_fd)
+
+lines(mean_energy, lwd=2, lty=1, col=2)
+lines(stddev_energy, lwd=2, lty=1, col=4)
+
+lines(mean_energy-stddev_energy, lwd=2, lty=1, col=6)
+lines(mean_energy+stddev_energy, lwd=2, lty=1, col=6)
+
+lines(mean_energy-2*stddev_energy, lwd=2, lty=1, col=8)
+lines(mean_energy+2*stddev_energy, lwd=2, lty=1, col=8)
+
+par(mfrow=c(1,1), mar=c(0,0,0,0), new=TRUE)
+plot(0, 0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+
+legend("bottom", 
+       legend = c("Mean", "Std Dev", "Mean+-1SD", "Mean+-2SD"),
+       col = c(2, 4, 6, 8),
+       lty = 1,
+       lwd = 2,
+       horiz = TRUE,
+       cex = 0.8,
+       bty = "n") 
+```
+
+Judging from the first plot, the characteristic energy consumption in Lithuania peaks in Winter months and drops in Summer, forming in a U-shape mean curve. The blue standard deviation curve shows that variability is almost uniform during the whole year and there are no months with unusually high or low variability. The magenta curves (Mean +- 1 SD) capture the majority of municipalities with the most typical consumption patterns, while the dark gray curves (Mean +- 2 SD) reveal two most extreme outliers not falling into this range.
+
+Comparison of plots showing centrality measures of Clusters 1 and 2 separately reveals that Cluster 1 has a higher baseline consumption and higher variability than Cluster 2. Outlier 1 also is also more complex seasonally, displaying more significant rise in consumption during Winter.
+
+#### The Bivariate Covariance Function v(s, t)
+
+The bivariate covariance function analysis reveals how electricity consumption patterns at different time points relate to each other within and across months. It measures the covariance between consumption at time point $s$ and time point $t$, creating a covarience surface. The diagonal of this surface represents variance (how much consumption varies within each time point), while the off-diagonal elements show how consumption in one time point relates to consumption in another time point. Like with the centrality measures, the covariance function analysis was performed for the entire dataset, and for Clusters 1 and 2 separately. 
+
+```{r, warning=FALSE}
+monthtime <- seq(min(time_range), max(time_range), length.out = 50)
+
+# all municipalities
+energy_var.bifd_all <- var.fd(smooth_fd)
+energy_var_mat_all <- eval.bifd(monthtime, monthtime, energy_var.bifd_all)
+
+# cluster 1
+energy_var.bifd_c1 <- var.fd(cluster1_fd)
+energy_var_mat_c1 <- eval.bifd(monthtime, monthtime, energy_var.bifd_c1)
+
+# cluster 2
+energy_var.bifd_c2 <- var.fd(cluster2_fd)
+energy_var_mat_c2 <- eval.bifd(monthtime, monthtime, energy_var.bifd_c2)
+
+library(viridis)
+
+layout(matrix(c(1,2,3,4), nrow=1, ncol=4), widths=c(3,3,3,1))
+
+par(mar=c(4,4,3,1), pty="s")
+
+my_colors <- viridis(100, option="plasma")
+
+max_val <- max(c(energy_var_mat_all, energy_var_mat_c1, energy_var_mat_c2))
+max_val <- ceiling(max_val/100)*100
+
+# All Municipalities
+image(monthtime, monthtime, energy_var_mat_all,
+      zlim=c(0, max_val),
+      col=my_colors,
+      xlab="Month", ylab="Month", 
+      main="All Municipalities")
+box()
+contour(monthtime, monthtime, energy_var_mat_all, add=TRUE, col="white", lwd=0.5, nlevels=5)
+
+# Cluster 1
+image(monthtime, monthtime, energy_var_mat_c1,
+      zlim=c(0, max_val),
+      col=my_colors,
+      xlab="Month", ylab="Month", 
+      main="Cluster 1")
+box()
+contour(monthtime, monthtime, energy_var_mat_c1, add=TRUE, col="white", lwd=0.5, nlevels=5)
+
+# Cluster 2
+image(monthtime, monthtime, energy_var_mat_c2,
+      zlim=c(0, max_val),
+      col=my_colors,
+      xlab="Month", ylab="Month", 
+      main="Cluster 2")
+box()
+contour(monthtime, monthtime, energy_var_mat_c2, add=TRUE, col="white", lwd=0.5, nlevels=5)
+
+# Color legend
+par(mar=c(4,0,3,3))
+plot(0, 0, type="n", xlim=c(0,1), ylim=c(0,max_val), 
+     axes=FALSE, xlab="", ylab="")
+title("Variance", line=1, cex.main=0.9)
+
+# Gradient color bar
+y_positions <- seq(0, max_val, length.out=100)
+rect_height <- max_val/100
+for(i in 1:100) {
+  rect(0.3, y_positions[i], 0.7, y_positions[i] + rect_height, 
+       col=my_colors[i], border=NA)
+}
+
+# Scale with fewer labels
+axis(4, at=pretty(c(0,max_val), n=5), las=1, cex.axis=0.8)
+
+```
+
+The covariance surface plots reveal that the variance is higher in Winter months (January and December) and lower in the Summer. There is a positive correlation between consumption in adjacent months. Notably, Cluster 1 exhibits significantly higher variance than Cluster 2,though Cluster 1's seasonal variance pattern is more complex due to industrial activity and tourism. A flatter surface of Cluster 2 suggests that is more predictable temporal relationships and significantly more uniform covariance values across different month combinations.
+
+#### Depth
+
+To find municipalities with the most representative and the most unusual energy consumption curves, functional depth was evaluated for all municipalities and for Clusers 1 and 2 separately. 
+
+Fraiman-Muniz (FM) Depth, also known as Integrated Depth, computes the integration of an univariate depth along the x axis. 
+
+```{r}
+tt <- seq(1, 12, length.out = 100)
+smooth_fdata <- fdata(smooth_fd, argvals = tt)
+rownames(smooth_fdata$data) <- colnames(smooth_fd$coefs)
+
+smooth_fdata_c1 <- fdata(cluster1_fd, argvals = tt)
+rownames(smooth_fdata_c1$data) <- colnames(cluster1_fd$coefs)
+
+smooth_fdata_c2 <- fdata(cluster2_fd, argvals = tt)
+rownames(smooth_fdata_c2$data) <- colnames(cluster2_fd$coefs)
+
+par(mfrow=c(1,3), mar=c(4,4,3,2))
+
+centrality_ylim <- c(170, 450)
+
+# Fraiman-Muniz Depth
+par(mfrow=c(1,3), pty="s", mar=c(4,4,3,1), oma=c(0,0,0,0), mgp=c(2,1,0))
+
+# FM - All Municipalities
+out.FM_all <- depth.FM(smooth_fdata, trim=0.1, draw=FALSE)
+deepest_index_all <- which.max(out.FM_all$dep)
+deepest_name_all <- rownames(smooth_fdata$data)[deepest_index_all]
+
+plot(smooth_fdata$argvals, smooth_fdata$data[1,], type="n", 
+     ylim=range(smooth_fdata$data), 
+     main="All Municipalities (FM)", xlab="Month", 
+     ylab="Consumption per Person (kWh)",
+     xaxt="n")
+axis(1, at=c(1,3,6,9,12))
+
+for(i in 1:nrow(smooth_fdata$data)) {
+  lines(smooth_fdata$argvals, smooth_fdata$data[i,], col="gray70", lwd=0.5)
+}
+
+lines(smooth_fdata$argvals, smooth_fdata$data[deepest_index_all,], col="red", lwd=2)
+lines(func.trim.FM(smooth_fdata, trim=0.1), col="blue", lwd=2)
+
+# FM - Cluster 1
+out.FM_c1 <- depth.FM(smooth_fdata_c1, trim=0.1, draw=FALSE)
+deepest_index_c1 <- which.max(out.FM_c1$dep)
+deepest_name_c1 <- rownames(smooth_fdata_c1$data)[deepest_index_c1]
+
+plot(smooth_fdata_c1$argvals, smooth_fdata_c1$data[1,], type="n", 
+     ylim=range(smooth_fdata_c1$data), 
+     main="Cluster 1 (FM)", xlab="Month", 
+     ylab="Consumption per Person (kWh)",
+     xaxt="n")
+axis(1, at=c(1,3,6,9,12))
+
+for(i in 1:nrow(smooth_fdata_c1$data)) {
+  lines(smooth_fdata_c1$argvals, smooth_fdata_c1$data[i,], col="gray70", lwd=0.5)
+}
+
+lines(smooth_fdata_c1$argvals, smooth_fdata_c1$data[deepest_index_c1,], col="red", lwd=2)
+lines(func.trim.FM(smooth_fdata_c1, trim=0.1), col="blue", lwd=2)
+
+# FM - Cluster 2
+out.FM_c2 <- depth.FM(smooth_fdata_c2, trim=0.1, draw=FALSE)
+deepest_index_c2 <- which.max(out.FM_c2$dep)
+deepest_name_c2 <- rownames(smooth_fdata_c2$data)[deepest_index_c2]
+
+plot(smooth_fdata_c2$argvals, smooth_fdata_c2$data[1,], type="n", 
+     ylim=range(smooth_fdata_c2$data), 
+     main="Cluster 2 (FM)", xlab="Month", 
+     ylab="Consumption per Person (kWh)",
+     xaxt="n")
+axis(1, at=c(1,3,6,9,12))
+
+for(i in 1:nrow(smooth_fdata_c2$data)) {
+  lines(smooth_fdata_c2$argvals, smooth_fdata_c2$data[i,], col="gray70", lwd=0.5)
+}
+
+lines(smooth_fdata_c2$argvals, smooth_fdata_c2$data[deepest_index_c2,], col="red", lwd=2)
+lines(func.trim.FM(smooth_fdata_c2, trim=0.1), col="blue", lwd=2)
+
+par(mfrow=c(1,1), mar=c(0,0,0,0), new=TRUE)
+plot(0, 0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+legend("bottom", legend=c("Fraiman-Muniz Median", "Trimmed Mean"),
+       col=c("red", "blue"), lwd=2, cex=0.8, bty="n", horiz=TRUE)
+
+cat("FM Deepest (All):", deepest_name_all, "\n")
+cat("FM Deepest (Cluster 1):", deepest_name_c1, "\n")
+cat("FM Deepest (Cluster 2):", deepest_name_c2, "\n")
+```
+
+### Outliers
+
+#### All municipalities
+
+```{r, warning=FALSE, hide=TRUE}
+# grid of 100 evenly spaced time points over the time range
+tt <- seq(min(time_range), max(time_range), length.out = 100)
+el <- eval.fd(tt, smooth_fd)
+
+#needs transpose
+bd <- band_depth(dt = t(el))
+names(bd) <- colnames(el)
+
+mbd <- modified_band_depth(t(el))
+
+fbplot_obj <- functional_boxplot(t(el), depth_method = "bd")
+# fbplot_obj$outliers
+outlier_indices <- fbplot_obj$outliers
+municipality_names <- colnames(el)[outlier_indices]
+print(municipality_names)
+
+fbplot_obj <- functional_boxplot(t(el), depth_method = "mbd")
+# fbplot_obj$outliers
+outlier_indices <- fbplot_obj$outliers
+municipality_names <- colnames(el)[outlier_indices]
+print(municipality_names)
+
+```
+
+
+Band Depth (BD) measures how "central" each curve is among all curves. The higher the band depth, the more typical the curve is. Modified band depth (MBD) tends to be more stable and less sensitive to crossing curves. `functional_boxplot()` uses BD and MBD to find curves that are "outliers" (very low depth).
+
+```{r, results='hide'}
+m <- muod(t(el), cut_method = c("boxplot"))
+# m$outliers
+colnames(el)[m$outliers$shape]
+colnames(el)[m$outliers$amplitude]
+colnames(el)[m$outliers$magnitude]
+```
+
+Massive Unsupervised Outlier Detection (MUOD) finds outliers by computing for each functional data, a magnitude, amplitude and shape index. Outliers identified in the magnitude indices are flagged as magnitude outliers. The same holds true for the amplitude and shape indices. Thus, the outliers are not only identified but also classified.
+
+Shape putliers: Pakruojis, Neringa, Palanga, Kazlų Rūda, Joniškis, Birštonas, Kėdainiai, Pasvalys, Akmenė.
+
+Amplitude outliers: Elektrėnai, Pakruojis.
+
+Magnitude outliers: Elektrėnai, Pakruojis, Palanga, Kazlų Rūda, Neringa.
+
+### Functional Boxplots
+
+#### All municipalities
+
+```{r, warning=FALSE}
+data_mat <- t(smooth_fdata$data)  # now rows = time, cols = functions
+time_grid <- smooth_fdata$argvals
+
+curve_labels <- rownames(smooth_fdata$data)
+
+colnames(data_mat) <- curve_labels
+fts_object <- fts(y = data_mat, x = time_grid)
+
+labels <- colnames(fts_object$y)
+
+# functional boxplot
+fboxplot(data = fts_object, plot.type = "functional", 
+         type = "bag", projmethod = "PCAproj",
+         xlab = "Month", ylab = "Consumption per Person (kWh)",
+         ylim = c(100, 1000),
+         legendpos = "top",
+         cex = 0.6)
+
+```
+
+The dark gray band shows the median 50% region.
+
+### Regression
+To understand how economic and industrial factors influence consumption behaviors throughout the year, we performed both function-on-scalar and function-on-function regression analysis. The dependant variable in our analysis was monthly per-capita energy consumption, while the predictors were unemployment rates, commercial and residential customer counts per person, and average wage in each municipality. The predictors were standardized to have mean 0 and standard deviation 1 to better capture the influence of predictors that have vastly different scales. Without standartization, wages would dominate the regression simply because of the scale, not beacuse of importance.
+
+#### Preparing functional data (unemployment)
 
 ```{r}
 # convert to wide format
@@ -362,12 +1133,10 @@ consumption_df <- as_refundObj(df$consumption)
 
 eval_points <- seq(min(months), max(months), length.out = 100)
 
-consumption_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = 6, norder = 4) # cubic splines
+consumption_basis <- create.bspline.basis(rangeval = range(eval_points),
+  nbasis = 6, norder = 4) # cubic splines
 
 consumption_fd <- Data2fd(eval_points, t(as.matrix(df$consumption)), consumption_basis)
-
-# ggplot(consumption_df, aes(x = index, y = value, group = id)) +
-#   geom_line()
 ```
 
 
@@ -385,7 +1154,8 @@ unemployment_matrix <- matched_unemployment %>%
   dplyr::select(-menesis) %>%
   as.matrix()
 
-fd_obj_all_mun_unempl <- smooth.basis(argvals = months, y = unemployment_matrix, fdParobj = fdPar(basis, 2))$fd
+fd_obj_all_mun_unempl <- smooth.basis(argvals = months, y = unemployment_matrix, 
+  fdParobj = fdPar(basis, 2))$fd
 plot(fd_obj_all_mun_unempl)
 
 unemployment_smoothed <- eval.fd(eval_points, fd_obj_all_mun_unempl)
@@ -399,7 +1169,7 @@ colnames(df$unemployment) <- colnames(df$consumption)
 ```
 
 
-### Preparing functional data (commercial/residential customer count per person)
+##### Preparing functional data (commercial/residential customer count per person)
 
 ```{r}
 customer_types <- read_parquet("data/fda_sutart_kiekis.parquet")
@@ -414,7 +1184,8 @@ customer_types <- customer_types %>%
 
 customer_types_by_population <- customer_types %>% left_join(population, by = "Savivaldybe")
 
-customer_types_by_population <- customer_types_by_population %>% mutate(customers_per_person = kiekis / populiacija)
+customer_types_by_population <- customer_types_by_population %>%
+  mutate(customers_per_person = kiekis / populiacija)
 
 commercial_matrix <- customer_types_by_population %>%
   filter(Sutarties_tipas == "Komercinė") %>%
@@ -439,8 +1210,10 @@ unique_dates <- sort(unique_dates)
 months <- seq(from = 1, to = length(unique_dates), by = 1)
 
 # create fd objects
-fd_obj_commercial <- smooth.basis(argvals = months, y = commercial_matrix, fdParobj = fdPar(basis, 2))$fd
-fd_obj_residential <- smooth.basis(argvals = months, y = residential_matrix, fdParobj = fdPar(basis, 2))$fd
+fd_obj_commercial <- smooth.basis(argvals = months, y = commercial_matrix, 
+  fdParobj = fdPar(basis, 2))$fd
+fd_obj_residential <- smooth.basis(argvals = months, y = residential_matrix, 
+  fdParobj = fdPar(basis, 2))$fd
 
 plot(fd_obj_commercial, main = "Commercial customers per person by municipality")
 plot(fd_obj_residential, main = "Residential customers per person by municipality")
@@ -460,7 +1233,12 @@ colnames(df$residential_customers) <- colnames(df$consumption)
 
 ```
 
-# Functional-on-scalar regression with mean wages, unemployment and customer count values
+
+#### Functional-on-scalar regression with mean wages, unemployment and customer count values
+
+For function-on-scalar regression analysis we performed penalized flexible functional regression (pffr) to investigate how municipal characteristics influence electricity consumption patterns throughout the year. This approach estimates time-varying coefficient functions to reveal how the effects of predictors change seasonally.
+
+In this regression, unemployment rates, commercial and residential customers counts per capita for each municipality were first averaged across months, then standardized to allow a more direct comparison of predictor importance.
 
 ```{r}
 # standardizing wages
@@ -495,7 +1273,8 @@ fosr.fit <- pffr(consumption ~ atlyginimas_standardized, data = df)
 summary(fosr.fit)
 plot(fosr.fit, pages=1, scale=0) # coefficients of regressors over time
 
-fosr.fit2 <- pffr(consumption ~ commercial_avg_std + atlyginimas_standardized, data = df)
+fosr.fit2 <- pffr(consumption ~ commercial_avg_std + atlyginimas_standardized,
+  data = df)
 summary(fosr.fit2)
 plot(fosr.fit2, pages=1, scale=0)
 
@@ -503,11 +1282,26 @@ fosr.fit3 <- pffr(consumption ~ commercial_avg_std + residential_avg_std + atlyg
 summary(fosr.fit3)
 plot(fosr.fit3, pages=1, scale=0)
 
-fosr.fit4 <- pffr(consumption ~ commercial_avg_std + residential_avg_std + vid_nedarbas_std + atlyginimas_standardized,  data = df)
+fosr.fit4 <- pffr(consumption ~ commercial_avg_std + residential_avg_std + vid_nedarbas_std + 
+    atlyginimas_standardized,  data = df)
 summary(fosr.fit4)
 plot(fosr.fit4, pages=1, scale=0)
 
 ```
+
+
+Four function-on-scalar regression models were compared:
+
+- Model 1: intercept + wages
+- Model 2: intercept + wages + commercial customers per person
+- Model 3: intercept + wages + commercial + residential customers per person
+- Model 4: intercept + wages + commercial + residential customers per person + unemployment
+
+Based on low p-values, all regressors are statistically significant.
+
+Wages and count of commercial customers have a positive coefficient, indicating that higher values of these predictors are related to higher consumption levels. Meanwhile, unemployment and count of residential customers have negative coefficients, suggesting an opposite effect.
+
+The intercept captures baseline seasonal consumption patterns. Out of all predictors, only the count of commercial customers coefficients show distinct seasonal patterns with peaks at the beginning of and the middle of the year, indicating that this regressor is more influential during those periods. This could be related to seasonal business cycle. Other independent variables maintain constant influence throughout the year.
 
 ```{r}
 # get predictions and transpose to match observed format
@@ -543,6 +1337,10 @@ metrics <- data.frame(
 
 print(metrics)
 ```
+
+Of the four models, Model 4 (which included all predictors) has the lowest Akaike Information Criterion (AIC) and (Bayesian Information Criterion) BIC, and highest $R^2$. However, even this model has a low $R^2$ value of 0.19.
+
+To understand how the relative influence of different predictors varies throughout the year, we plotted each predictor's proportional contribution to the total absolute effect at each time point.
 
 ```{r}
 # Importance of each predictor from fosr.fit4 model
@@ -593,14 +1391,20 @@ legend("topright",
 
 ```
 
-## Function-on-function regression model: unemployment (function), commercial/residential customer count per person (function), and wages (scalar)
 
-### Predictor standardization
+From the plot we can see that wages has the biggest influence which rises towards the end of the year and around March. The influence of the count of commercial customer varies the most and peaks during the Summer and at the beginning of the year. The most influential predictor is the unemployment rate which is almost constant throughout the year.
+
+#### Function-on-function regression model: unemployment (function), commercial/residential customer count per person (function), and wages (scalar)
+
+Next, we performed fnction-on-function regression, where not only the dependent variable but also the predictors were functions.
+
+##### Predictor standardization
 
 ```{r}
 eval_points <- seq(min(months), max(months), length.out = 100)
 
-# sunction to standardize a functional data object - each month is individually transformed to have mean 0 and standard deviation 1
+# function to standardize a functional data object - each month is
+#  individually transformed to have mean 0 and standard deviation 1
 standardize_fd <- function(fd_obj) {
   eval_points <- seq(min(months), max(months), length.out = 100)
   fd_values <- eval.fd(eval_points, fd_obj)
@@ -634,7 +1438,8 @@ par(mfrow=c(1,1))
 
 unemployment_vel_values <- eval.fd(eval_points, unemployment_fd_vel)
 
-unemployment_vel_std_values <- (unemployment_vel_values - mean(unemployment_vel_values)) / sd(as.vector(unemployment_vel_values))
+unemployment_vel_std_values <- (unemployment_vel_values - mean(unemployment_vel_values)) / 
+  sd(as.vector(unemployment_vel_values))
 unemployment_vel_std <- Data2fd(argvals = eval_points, 
                               y = unemployment_vel_std_values, 
                               basisobj = unemployment_fd_vel$basis)
@@ -650,18 +1455,13 @@ xfdlist <- list(
 ```
 
 
-### Parameter optimization
+Additionally, after trying out several combinations of predictors, we included the first derivative (velocity) of unemployment into our model for better characterization of functional behavior.
 
-```{r}
-# # non-startdartized fds:
-# xfdlist <- list(
-#   const = rep(1, nrow(df)),
-#   commercial = fd_obj_commercial,
-#   residential = fd_obj_residential,
-#   unemployment = fd_obj_all_mun_unempl,
-#   wages = df$atlyginimas
-# )
+To find the best smoothing parameters ($\lambda$ and $nbasis$) for each predictor, we performed a systematic search based on Generalized Cross-Validation (GCV). Number of basis functions controls model complexity and flexibility (tested range: 8-24), while $\lambda$ controls function smoothness (tested range: $10^{-5}-10^{1}$).
 
+##### Parameter optimization
+
+```{r, results='hide'}
 # find optimal parameters for a specific regressor
 find_optimal_params <- function(regressor_name) {
   cat("\nFinding optimal parameters for:", regressor_name, "\n")
@@ -747,12 +1547,18 @@ unemployment_vel_params <- find_optimal_params("unemployment_vel")
 wages_params <- find_optimal_params("wages")
 
 # basis and parameter objects for each regressor
-const_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = const_params$nbasis)
-commercial_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = commercial_params$nbasis)
-residential_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = residential_params$nbasis)
-unemployment_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = unemployment_params$nbasis)
-unemployment_vel_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = unemployment_vel_params$nbasis)
-wages_basis <- create.bspline.basis(rangeval = range(eval_points), nbasis = wages_params$nbasis)
+const_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = const_params$nbasis)
+commercial_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = commercial_params$nbasis)
+residential_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = residential_params$nbasis)
+unemployment_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = unemployment_params$nbasis)
+unemployment_vel_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = unemployment_vel_params$nbasis)
+wages_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = wages_params$nbasis)
 
 const_betafdPar <- fdPar(const_basis, 2, lambda = const_params$lambda)
 commercial_betafdPar <- fdPar(commercial_basis, 2, lambda = commercial_params$lambda)
@@ -763,6 +1569,7 @@ wages_betafdPar <- fdPar(wages_basis, 2, lambda = wages_params$lambda)
 
 ```
 
+All predictors have an optimal $\lambda$ value of $10^{-5}$, indicating that minimal smoothing is preferred. The optimal number of basis functions are as follows: for intercept 24, commercial and residential customer counts 20, unemployment 13, unemployment rate 17.
 
 ```{r}
 # functional predictors
@@ -900,16 +1707,6 @@ betastderrlist <- fRegressList2$betastderrlist
 # coefficients with confidence intervals
 par(mfrow=c(2,3))
 plotbeta(betaestlist, betastderrlist, eval_points)
-# regression function 1 - the intercept function with confidence intervals, baseline electricity consumption pattern across months when the effect of all predictors are zero
-# regression function 2-6 - coefficient functions for each regressor, showing how the effect of this predictor varies across the year (with confidence intervals):
-  # commercial,
-  # residential,
-  # unemployment,
-  # unemployment_vel,
-  # wages
-# for a coefficient to be statistically significant at a given point in time, the confidence interval must not include zero. Based on this:
-# Intercept and wages are statistically significant throughout the year
-
 # calculate R-squared
 calculate_r2 <- function(model) {
   yhat <- eval.fd(eval_points, model$yhatfd)
@@ -927,9 +1724,28 @@ cat(sprintf("R-squared:  %.4f\n", r2_optimized))
 
 ```
 
+The function-on-function regression model achieves $R^2=0.25$, explaining 25% of variance in electricity consumption patterns, which is an improvement over the function-on-scalar approach (19% variance explained), demonstrating the value of allowing predictor relationships to vary in time.
+
+Intercept coefficient curve (Regression function 1) is aligned with the mean consumption curve due to predictor standardization. It captures the baseline consumption when all standardized predictors equal to zero. 
+
+Commercial customer count (Regression function 2) has a positive effect on consumption almost year-round, with a small exception around November when it slightly drops below zero. It peaks in July-September and around January-February, possibly related to business/tourism peak seasons.
+
+Residential customer effect (Regression function 3) is negative year-round, with the lowest values around January-February.
+
+Unemployment rate (Regression function 4) has an overall negative effect on consumption, reaching the lowest value in November but quickly going back up towards the Winter holiday season. Interestingly, unemployment rate has a positive effect on energy consumption for a brief period in February. 
+
+Unemployment velocity (Regression function 5) effect has a complex tendency, being generally negative (reaching extreme negative effect during the Summer) but attaining positive values towards the end of the year.
+
+Effect of wages is positive throughout the year but drops in the middle of the year, resulting in a U-shaped seasonal pattern. This could be explained by the logic that wages effect is the highest when energy demand is the highest (during the heating season in Winter) and becomes less impactful when this demand is reduced.
+
+The graph visualizing how $R^2$ varies across the months suggests that summer-early autumn patterns are more predictable from the included variables than consumption in other months.
+
+The plot showing confidence intervals for all coefficient functions reveals that only the wages effect is consistently statistically significant throughout the year as its confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
+
 ```{r}
 # relative importance of each predictor by month
-total_effect <- abs(commercial_coef) + abs(residential_coef) + abs(unemployment_coef) + abs(unemployment_vel_coef) + abs(wages_coef)
+total_effect <- abs(commercial_coef) + abs(residential_coef) + abs(unemployment_coef) + 
+  abs(unemployment_vel_coef) + abs(wages_coef)
 commercial_importance <- abs(commercial_coef) / total_effect * 100
 residential_importance <- abs(residential_coef) / total_effect * 100
 unemployment_vel_importance <- abs(unemployment_vel_coef) / total_effect * 100
@@ -939,25 +1755,31 @@ wages_importance <- abs(wages_coef) / total_effect * 100
 plot(eval_points, commercial_importance, type="l", lwd=2, col="black",
      xlab="Month", ylab="Relative importance (%)", 
      main="Relative importance of predictors over time (function-on-function)",
-     ylim=c(0, max(commercial_importance, residential_importance, unemployment_importance, unemployment_vel_importance, wages_importance) * 1.5),
+     ylim=c(0, max(commercial_importance, residential_importance, unemployment_importance, 
+       unemployment_vel_importance, wages_importance) * 1.5),
      xaxt="n")
 axis(1, at=month_positions, labels=month.abb)
 lines(eval_points, residential_importance, lwd=2, col="red", lty=1)
-lines(eval_points, unemployment_vel_importance, lwd=2, col="blue", lty=1)
-lines(eval_points, unemployment_importance, lwd=2, col="darkgreen", lty=1)
+lines(eval_points, unemployment_importance, lwd=2, col="blue", lty=1)
+lines(eval_points, unemployment_vel_importance, lwd=2, col="darkgreen", lty=1)
 lines(eval_points, wages_importance, lwd=2, col="orange", lty=1)
 grid(NULL, NULL, lty=3, col="lightgray")
 
 legend("topright", 
-       legend=c("Commercial Customers", "Residential Customers", "Unemployment", "Unemployment velocity", "Wages"), 
+       legend=c("Commercial Customers", "Residential Customers", 
+         "Unemployment", "Unemployment velocity", "Wages"), 
        lty=1, 
        col=c("black", "red", "blue", "darkgreen", "orange"),
        bty="n")
 
-cat(sprintf("Mean importance of the count of commercial customers per person: %.2f%%\n", mean(commercial_importance)))
-cat(sprintf("Mean importance of the count of residential customers per person: %.2f%%\n", mean(residential_importance)))
+cat(sprintf("Mean importance of the count of commercial customers per person: %.2f%%\n", 
+  mean(commercial_importance)))
+cat(sprintf("Mean importance of the count of residential customers per person: %.2f%%\n", 
+  mean(residential_importance)))
 cat(sprintf("Mean importance of unemployment: %.2f%%\n", mean(unemployment_importance)))
 cat(sprintf("Mean importance of unemployment velocity: %.2f%%\n", mean(unemployment_vel_importance)))
 cat(sprintf("Mean importance of wages: %.2f%%\n", mean(wages_importance)))
 
 ```
+
+The function-on-function relative importance analysis reveals significantly more complex seasonal dynamics compared to the function-on-scalar approach, with predictor hierarchies shifting substantially throughout the year. On average, the most important predictor is wages (34.74%), but with significant seasonal variations. The second most important predictor is unemployment velocity 24.47%, followed by commercial customer count per person (18.22%), unemployment (11.96%), and residential customer count per person (10.62%).
