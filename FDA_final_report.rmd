@@ -1,14 +1,8 @@
 ---
 title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
-<<<<<<< HEAD
 output:
   pdf_document: default
-  html_document:
-    df_print: paged
-=======
-output: pdf_document
->>>>>>> a69c87d769fc65307f5a3ffda9bbdf7584598f1c
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
@@ -1239,11 +1233,11 @@ colnames(df$residential_customers) <- colnames(df$consumption)
 ```
 
 
-#### Functional-on-scalar regression with mean wages, unemployment and customer count values
+#### Functional-on-scalar regression
 
 For function-on-scalar regression analysis we performed penalized flexible functional regression (pffr) to investigate how municipal characteristics influence electricity consumption patterns throughout the year. This approach estimates time-varying coefficient functions to reveal how the effects of predictors change seasonally.
 
-In this regression, unemployment rates, commercial and residential customers counts per capita for each municipality were first averaged across months, then standardized to allow a more direct comparison of predictor importance.
+In this regression, unemployment rates, commercial and residential customers counts per-capita for each municipality were first averaged across months, then standardized to allow a more direct comparison of predictor importance. Cluster label was added as a categorical predictor
 
 ```{r}
 # standardizing wages
@@ -1265,6 +1259,11 @@ residential_vals <- eval.fd(months, fd_obj_residential)
 commercial_avg <- colMeans(commercial_vals, na.rm = TRUE)
 residential_avg <- colMeans(residential_vals, na.rm = TRUE)
 
+# adding cluster label as a predictor
+df <- df %>%
+  left_join(cluster_table, by = c("Savivaldybe" = "Savivaldybe"))
+df$cluster1_dummy <- ifelse(df$Cluster == 1, 1, 0)
+
 commercial_avg_std <- (commercial_avg - mean(commercial_avg)) / sd(commercial_avg)
 residential_avg_std <- (residential_avg - mean(residential_avg)) / sd(residential_avg)
 
@@ -1274,44 +1273,16 @@ df$commercial_avg_std <- commercial_avg_std
 df$residential_avg_std <- residential_avg_std
 
 # penalized flexible functional regression
-fosr.fit <- pffr(consumption ~ atlyginimas_standardized, data = df)
-summary(fosr.fit)
-plot(fosr.fit, pages=1, scale=0) # coefficients of regressors over time
-
-fosr.fit2 <- pffr(consumption ~ commercial_avg_std + atlyginimas_standardized,
-  data = df)
-summary(fosr.fit2)
-plot(fosr.fit2, pages=1, scale=0)
-
-fosr.fit3 <- pffr(consumption ~ commercial_avg_std + residential_avg_std + atlyginimas_standardized,  data = df)
-summary(fosr.fit3)
-plot(fosr.fit3, pages=1, scale=0)
-
 fosr.fit4 <- pffr(consumption ~ commercial_avg_std + residential_avg_std + vid_nedarbas_std + 
-    atlyginimas_standardized,  data = df)
+    atlyginimas_standardized + cluster1_dummy,  data = df)
+
 summary(fosr.fit4)
 plot(fosr.fit4, pages=1, scale=0)
-
 ```
 
+- Model equation: 
 
-Four function-on-scalar regression models were compared:
-
-- Model 1:
-
-$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \varepsilon_i(t)$$
-
-- Model 2: 
-
-$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \varepsilon_i(t)$$
-
-- Model 3:
-
-$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \beta_3(t) \cdot \text{Residential}_i + \varepsilon_i(t)$$
-
-- Model 4: 
-
-$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \beta_3(t) \cdot \text{Residential}_i + \beta_4(t) \cdot \text{Unemployment}_i + \varepsilon_i(t)$$
+$$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text{Commercial}_i + \beta_3(t) \cdot \text{Residential}_i + \beta_4(t) \cdot \text{Unemployment}_i + \beta_5(t) \cdot \text{Cluster}_{1,i} + \varepsilon_i(t)$$
 
 - $Y_i(t)$ = Electricity consumption for municipality $i$ at time $t$
 - $\beta_0(t)$ = Intercept function (baseline seasonal consumption pattern)  
@@ -1320,13 +1291,14 @@ $$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text
 - $\text{Commercial}_i$ = Standardized commercial customers per person in municipality $i$
 - $\text{Residential}_i$ = Standardized residential customers per person in municipality $i$
 - $\text{Unemployment}_i$ = Standardized unemployment rate in municipality $i$
+- $\text{Cluster}_{1,i}$ = Dummy variable that equals 1 if municipality $i$ belongs to cluster 1 and 0 if it belongs to cluster 2
 - $\varepsilon_i(t)$ = Error function for municipality $i$ at time $t$
 
 Based on low p-values, all regressors are statistically significant.
 
-Wages and count of commercial customers have a positive coefficient, indicating that higher values of these predictors are related to higher consumption levels. Meanwhile, unemployment and count of residential customers have negative coefficients, suggesting an opposite effect.
+Wages, count of commercial customers, and, surprisingly, unemployment have a positive coefficient, indicating that higher values of these predictors are related to higher consumption levels. Belonging to Cluster 1 also has a positive effect on consumption. Meanwhile, count of residential customers has negative coefficients, suggesting an opposite effect.
 
-The intercept captures baseline seasonal consumption patterns. Out of all predictors, only the count of commercial customers coefficients show distinct seasonal patterns with peaks at the beginning of and the middle of the year, indicating that this regressor is more influential during those periods. This could be related to seasonal business cycle. Other independent variables maintain constant influence throughout the year.
+The intercept captures baseline seasonal consumption patterns. The count of commercial customers coefficients show distinct seasonal patterns with peaks at the beginning of and the middle of the year, indicating that this regressor is more influential during those periods. This could be related to seasonal business cycle. Other independent variables show some variation throughout the year, except for he count of residential customers, which is almost constant year-round.
 
 ```{r}
 # get predictions and transpose to match observed format
@@ -1334,9 +1306,6 @@ get_pffr_predictions <- function(model) {
   return(t(predict(model)))
 }
 
-pred_wages_only <- get_pffr_predictions(fosr.fit)
-pred_wages_commercial <- get_pffr_predictions(fosr.fit2)
-pred_comm_res_wages <- get_pffr_predictions(fosr.fit3)
 pred_all_vars <- get_pffr_predictions(fosr.fit4)
 
 observed <- t(as.matrix(df$consumption))
@@ -1349,21 +1318,17 @@ calculate_r2 <- function(observed, predicted) {
 
 # performance metrics
 metrics <- data.frame(
-  Model = c("Wages_Only", "Wages_Commercial", "Wages_Comm_Res", "All_Variables"),
-  AIC = c(AIC(fosr.fit), AIC(fosr.fit2), AIC(fosr.fit3), AIC(fosr.fit4)),
-  BIC = c(BIC(fosr.fit), BIC(fosr.fit2), BIC(fosr.fit3), BIC(fosr.fit4)),
-  R2 = c(
-    calculate_r2(as.vector(observed), as.vector(pred_wages_only)),
-    calculate_r2(as.vector(observed), as.vector(pred_wages_commercial)),
-    calculate_r2(as.vector(observed), as.vector(pred_comm_res_wages)),
-    calculate_r2(as.vector(observed), as.vector(pred_all_vars))
+  Model = "All_Variables",
+  AIC = AIC(fosr.fit4),
+  BIC = BIC(fosr.fit4),
+  R2 = calculate_r2(as.vector(observed), as.vector(pred_all_vars)
   )
 )
 
 print(metrics)
 ```
 
-Of the four models, Model 4 (which included all predictors) has the lowest Akaike Information Criterion (AIC) and (Bayesian Information Criterion) BIC, and highest $R^2$. However, even this model has a low $R^2$ value of 0.19.
+With all five predictors included, the model has $R^2$ value of 0.55.
 
 To understand how the relative influence of different predictors varies throughout the year, we plotted each predictor's proportional contribution to the total absolute effect at each time point.
 
@@ -1375,14 +1340,16 @@ commercial_coef_fosr <- abs(fosr_coefs$smterms$`commercial_avg_std(yindex)`$valu
 residential_coef_fosr <- abs(fosr_coefs$smterms$`residential_avg_std(yindex)`$value)
 unemployment_coef_fosr <- abs(fosr_coefs$smterms$`vid_nedarbas_std(yindex)`$value)
 wages_coef_fosr <- abs(fosr_coefs$smterms$`atlyginimas_standardized(yindex)`$value)
+cluster_coef_fosr <- abs(fosr_coefs$smterms$`cluster1_dummy(yindex)`$value)
 
 total_effect_fosr <- commercial_coef_fosr + residential_coef_fosr + 
-                     unemployment_coef_fosr + wages_coef_fosr
+                     unemployment_coef_fosr + wages_coef_fosr + cluster_coef_fosr
 
 commercial_importance_fosr <- commercial_coef_fosr / total_effect_fosr * 100
 residential_importance_fosr <- residential_coef_fosr / total_effect_fosr * 100
 unemployment_importance_fosr <- unemployment_coef_fosr / total_effect_fosr * 100
 wages_importance_fosr <- wages_coef_fosr / total_effect_fosr * 100
+cluster_importance_fosr <- cluster_coef_fosr / total_effect_fosr * 100
 
 cat(sprintf("Mean importance from function-on-scalar model:\n"))
 cat(sprintf("Mean importance of the count of commercial customers per person: %.2f%%\n", 
@@ -1393,6 +1360,8 @@ cat(sprintf("Mean importance of unemployment: %.2f%%\n",
            mean(unemployment_importance_fosr)))
 cat(sprintf("Mean importance of wages: %.2f%%\n", 
            mean(wages_importance_fosr)))
+cat(sprintf("Mean importance of cluster: %.2f%%\n", 
+           mean(cluster_importance_fosr)))
 
 eval_points <- 1:length(commercial_coef_fosr)
 month_positions <- seq(1, length(eval_points), length.out = 12)
@@ -1401,33 +1370,35 @@ plot(eval_points, commercial_importance_fosr, type="l", lwd=2, col="black",
      xlab="Month", ylab="Relative importance (%)", 
      main="Relative importance of predictors over time (function-on-scalar)",
      ylim=c(0, max(commercial_importance_fosr, residential_importance_fosr, 
-                  unemployment_importance_fosr, wages_importance_fosr) * 1.5),
+                  unemployment_importance_fosr, wages_importance_fosr, cluster_importance_fosr) * 1.2),
      xaxt="n")
 axis(1, at=month_positions, labels=month.abb)
 lines(eval_points, residential_importance_fosr, lwd=2, col="red", lty=1)
 lines(eval_points, unemployment_importance_fosr, lwd=2, col="blue", lty=1)
 lines(eval_points, wages_importance_fosr, lwd=2, col="darkgreen", lty=1)
+lines(eval_points, cluster_importance_fosr, lwd=2, col="cyan", lty=1)
 grid(NULL, NULL, lty=3, col="lightgray")
 legend("topright", 
-       legend=c("Commercial Customers", "Residential Customers", "Unemployment", "Wages"), 
+       legend=c("Commercial Customers", "Residential Customers", "Unemployment", "Wages", "Cluster"), 
        lty=1, 
-       col=c("black", "red", "blue", "darkgreen"),
+       col=c("black", "red", "blue", "darkgreen", "cyan"),
        bty="n")
 
 ```
 
 
-From the plot we can see that wages has the biggest influence which rises towards the end of the year and around March. The influence of the count of commercial customer varies the most and peaks during the Summer and at the beginning of the year. The most influential predictor is the unemployment rate which is almost constant throughout the year.
+From the plot we can see that cluster is the most important predictor of energy consumption. Out of the scalar regressors, wages has the biggest influence which is relatively stable across the months. The influence of the count of commercial customer varies the most and peaks during the Summer and at the beginning of the year. The importance of residential customer count and unemployment rate is similar and stable throughout the year.
 
 #### Function-on-function regression model: unemployment (function), commercial/residential customer count per person (function), and wages (scalar)
 
 Next, we performed function-on-function regression, where not only the dependent variable but also the predictors were functions.
 
+
 $$Y_i(t) = \beta_0(t) + \int_0^{12} \beta_1(t,s) \cdot \text{Commercial}_i(s) \, ds + \int_0^{12} \beta_2(t,s) \cdot \text{Residential}_i(s) \, ds$$
 
 $$+ \int_0^{12} \beta_3(t,s) \cdot \text{Unemployment}_i(s) \, ds + \int_0^{12} \beta_4(t,s) \cdot \text{UnemploymentVel}_i(s) \, ds$$
 
-$$+ \beta_5(t) \cdot \text{Wages}_i + \varepsilon_i(t)$$
+$$+ \beta_5(t) \cdot \text{Wages}_i + \beta_6(t) \cdot \text{Cluster}_1 + \varepsilon_i(t)$$
 
 **Where:**
 - $Y_i(t)$ = Electricity consumption for municipality $i$ at time $t$
@@ -1439,6 +1410,7 @@ $$+ \beta_5(t) \cdot \text{Wages}_i + \varepsilon_i(t)$$
 - $\text{Unemployment}_i(s)$ = Unemployment rate function for municipality $i$
 - $\text{UnemploymentVel}_i(s)$ = Unemployment velocity function for municipality $i$
 - $\text{Wages}_i$ = Standardized average wages (scalar) for municipality $i$
+- $\text{Cluster}_1$ = Dummy variable that equals 1 if municipality $i$ belongs to cluster 1 and 0 if it belongs to cluster 2
 - $\varepsilon_i(t)$ = Error function for municipality $i$ at time $t$
 - $s, t \in [0, 12]$ = Time points (months)
 
@@ -1496,7 +1468,8 @@ xfdlist <- list(
   residential = residential_fd_std, 
   unemployment = unemployment_fd_std,
   unemployment_vel = unemployment_vel_std,
-  wages = df$atlyginimas_standardized
+  wages = df$atlyginimas_standardized,
+  cluster = df$cluster1_dummy
 )
 ```
 
@@ -1538,7 +1511,8 @@ find_optimal_params <- function(regressor_name) {
         residential = default_betafdPar,
         unemployment = default_betafdPar,
         unemployment_vel = unemployment_vel_std,
-        wages = default_betafdPar
+        wages = default_betafdPar,
+        cluster = default_betafdPar
       )
       betalist[[regressor_name]] <- betafdPar
       
@@ -1591,6 +1565,7 @@ residential_params <- find_optimal_params("residential")
 unemployment_params <- find_optimal_params("unemployment")
 unemployment_vel_params <- find_optimal_params("unemployment_vel")
 wages_params <- find_optimal_params("wages")
+cluster_params <- find_optimal_params("cluster")
 
 # basis and parameter objects for each regressor
 const_basis <- create.bspline.basis(rangeval = range(eval_points), 
@@ -1605,6 +1580,8 @@ unemployment_vel_basis <- create.bspline.basis(rangeval = range(eval_points),
   nbasis = unemployment_vel_params$nbasis)
 wages_basis <- create.bspline.basis(rangeval = range(eval_points), 
   nbasis = wages_params$nbasis)
+cluster_basis <- create.bspline.basis(rangeval = range(eval_points), 
+  nbasis = cluster_params$nbasis)
 
 const_betafdPar <- fdPar(const_basis, 2, lambda = const_params$lambda)
 commercial_betafdPar <- fdPar(commercial_basis, 2, lambda = commercial_params$lambda)
@@ -1612,10 +1589,14 @@ residential_betafdPar <- fdPar(residential_basis, 2, lambda = residential_params
 unemployment_betafdPar <- fdPar(unemployment_basis, 2, lambda = unemployment_params$lambda)
 unemployment_vel_betafdPar <- fdPar(unemployment_basis, 2, lambda = unemployment_vel_params$lambda)
 wages_betafdPar <- fdPar(wages_basis, 2, lambda = wages_params$lambda)
+cluster_betafdPar <- fdPar(cluster_basis, 2, lambda = cluster_params$lambda)
 
 ```
 
-All predictors have an optimal $\lambda$ value of $10^{-5}$, indicating that minimal smoothing is preferred. The optimal number of basis functions are as follows: for intercept 24, commercial and residential customer counts 20, unemployment 13, unemployment rate 17.
+For the intercept term, we found $nbasis = 13$ and $\lambda = 0.01$ to be optimal. Commercial customers required $nbasis = 20$ with ($\lambda = 1 \times 10^{-5}$), while residential customers used $nbasis = 19$ and $\lambda = 0.001$. 
+
+The unemployment predictor performed best with $nbasis = 13$ and $\lambda = 1 \times 10^{-5}$. Unemployment velocity achieved the lowest GCV score using $nbasis = 18$ and $\lambda = 1 \times 10^{-5}$. Wages required $nbasis = 20$ and minimal smoothing ($\lambda = 1 \times 10^{-5}$). Cluster predictor used $nbasis = 8$ and $\lambda = 1 \times 10^{-5}$.
+
 
 ```{r}
 # functional predictors
@@ -1625,7 +1606,8 @@ betalist <- list(
   residential = residential_betafdPar,
   unemployment = unemployment_betafdPar,
   unemployment_vel = unemployment_vel_std,
-  wages = wages_betafdPar
+  wages = wages_betafdPar,
+  cluster = cluster_betafdPar
 )
 
 # function-on-function regression
@@ -1683,6 +1665,14 @@ plot(betaestlist$wages$fd,
 axis(1, at=month_positions)
 abline(h=0, lty=2)
 
+# plot cluster effect function
+plot(betaestlist$cluster$fd, 
+     main="Effect of cluster", 
+     xlab="Month", ylab="Effect magnitude",
+     xaxt="n")
+axis(1, at=month_positions)
+abline(h=0, lty=2)
+
 par(mfrow=c(1,1))
 intercept_curve <- predict(betaestlist$const$fd, eval_points)
 consumption_mean <- predict(mean.fd(consumption_fd), eval_points)
@@ -1704,6 +1694,7 @@ residential_coef <- predict(betaestlist$residential$fd, eval_points)
 unemployment_coef <- predict(betaestlist$unemployment$fd, eval_points)
 unemployment_vel_coef <- predict(betaestlist$unemployment_vel$fd, eval_points)
 wages_coef <- predict(betaestlist$wages$fd, eval_points)
+cluster_coef <- predict(betaestlist$cluster$fd, eval_points)
 
 consumption_hat <- fof_model$yhatfd
 consumption_hat_matrix <- eval.fd(eval_points, consumption_hat)
@@ -1720,19 +1711,20 @@ SSE0 <- apply(resmat0^2, 1, sum)
 SSE1 <- apply(resmat^2, 1, sum)
 R2_by_time <- (SSE0-SSE1)/SSE0
 
-ylim2 <- c(min(0, min(commercial_coef), min(residential_coef), min(unemployment_coef), min(unemployment_vel_coef)), 
-           max(commercial_coef, residential_coef, R2_by_time, unemployment_coef, unemployment_vel_coef, wages_coef, 130))
+ylim2 <- c(min(0, min(commercial_coef), min(residential_coef), min(unemployment_coef), min(unemployment_vel_coef), min(cluster_coef)), 
+           max(commercial_coef, residential_coef, R2_by_time, unemployment_coef, unemployment_vel_coef, wages_coef, cluster_coef))
 plot(eval_points, commercial_coef, lwd=2, xlab='', ylab='', ylim=ylim2, type='l',
      main='Effects', xaxt="n")
 axis(1, at=month_positions)
 abline(h=0, lty='dashed')
 lines(eval_points, residential_coef, lty=1, col="red")
 lines(eval_points, unemployment_vel_coef, lty=1, col="blue")
-lines(eval_points, unemployment_coef, lty=1, col="darkgreen")
-lines(eval_points, wages_coef, lty=1, col="orange")
+lines(eval_points, unemployment_coef, lty=1, col="orange")
+lines(eval_points, wages_coef, lty=1, col="darkgreen")
+lines(eval_points, cluster_coef, lty=1, col="cyan")
 legend("topleft", 
-       legend=c("Commercial effect", "Residential effect", "Unemployment effect", "Unemployment velocity effect", "Wages efect"), 
-       lty=1, col=c("black", "red", "blue", "darkgreen", "orange"))
+       legend=c("Commercial effect", "Residential effect", "Unemployment effect", "Unemployment velocity effect", "Wages effect", "Cluster effect"), 
+       lty=1, col=c("black", "red", "blue", "orange", "darkgreen", "cyan"), bty="n")
 
 op <- par(mfrow=c(1,1))
 ylim_r2 <- c(0, max(R2_by_time) * 1.1)
@@ -1770,53 +1762,57 @@ cat(sprintf("R-squared:  %.4f\n", r2_optimized))
 
 ```
 
-The function-on-function regression model achieves $R^2=0.25$, explaining 25% of variance in electricity consumption patterns, which is an improvement over the function-on-scalar approach (19% variance explained), demonstrating the value of allowing predictor relationships to vary in time.
+The function-on-function regression model achieves $R^2=0.58$, explaining 58% of variance in electricity consumption patterns, which is an improvement over the function-on-scalar approach (55% variance explained), demonstrating the value of allowing predictor relationships to vary in time.
 
-Intercept coefficient curve (Regression function 1) is aligned with the mean consumption curve due to predictor standardization. It captures the baseline consumption when all standardized predictors equal to zero. 
+Intercept coefficient curve (Regression function 1) captures the baseline consumption when all predictors are controlled for. 
 
-Commercial customer count (Regression function 2) has a positive effect on consumption almost year-round, with a small exception around November when it slightly drops below zero. It peaks in July-September and around January-February, possibly related to business/tourism peak seasons.
+Commercial customer count (Regression function 2) has a varying effect on consumption across the months. It peaks in July-September and around January-February, possibly related to business/tourism peak seasons.
 
 Residential customer effect (Regression function 3) is negative year-round, with the lowest values around January-February.
 
-Unemployment rate (Regression function 4) has an overall negative effect on consumption, reaching the lowest value in November but quickly going back up towards the Winter holiday season. Interestingly, unemployment rate has a positive effect on energy consumption for a brief period in February. 
+Interestingly, unemployment rate (Regression function 4) has a positive effect on consumption in the first half of the year and becomes negative later, reaching the lowest value in November but quickly going back up towards the Winter holiday season. 
 
 Unemployment velocity (Regression function 5) effect has a complex tendency, being generally negative (reaching extreme negative effect during the Summer) but attaining positive values towards the end of the year.
 
-Effect of wages is positive throughout the year but drops in the middle of the year, resulting in a U-shaped seasonal pattern. This could be explained by the logic that wages effect is the highest when energy demand is the highest (during the heating season in Winter) and becomes less impactful when this demand is reduced.
+Effect of wages (Regression function 6) is strongly positive throughout the year but drops in the middle of the year, resulting in a U-shaped seasonal pattern. This could be explained by the logic that wages effect is the highest when energy demand is the highest (during the heating season in Winter) and becomes less impactful when this demand is reduced.
 
-The graph visualizing how $R^2$ varies across the months suggests that energy consumption is most predictable during summer when tourism, agriculture, and construction activities reach stable, peak operating patterns. In contrast, predicting energy consumption during the winter is more challenging because
+The effect of belonging to Cluster 1 (Regression function 7) has a positive effect on energy consumption year-round and has a complex shape. It reaches the lowest point around June, and peaks around September and during the Winter months.
+
+The graph visualizing how $R^2$ varies across the months suggests that energy consumption is most predictable during summer when tourism, agriculture, and construction activities reach stable, peak operating patterns. In contrast, predicting energy consumption during colder months is more challenging because
 heating demand introduces weather-dependent variability. This suggests, that additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months.
 
-The plot showing confidence intervals for all coefficient functions reveals that only the wages effect is consistently statistically significant throughout the year as its confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
+The plot showing confidence intervals for all coefficient functions reveals that only wages and cluster effect is consistently statistically significant throughout the year as its confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
 
 ```{r}
 # relative importance of each predictor by month
 total_effect <- abs(commercial_coef) + abs(residential_coef) + abs(unemployment_coef) + 
-  abs(unemployment_vel_coef) + abs(wages_coef)
+  abs(unemployment_vel_coef) + abs(wages_coef) + abs(cluster_coef)
 commercial_importance <- abs(commercial_coef) / total_effect * 100
 residential_importance <- abs(residential_coef) / total_effect * 100
 unemployment_vel_importance <- abs(unemployment_vel_coef) / total_effect * 100
 unemployment_importance <- abs(unemployment_coef) / total_effect * 100
 wages_importance <- abs(wages_coef) / total_effect * 100
+cluster_importance <- abs(cluster_coef) / total_effect * 100
 
 plot(eval_points, commercial_importance, type="l", lwd=2, col="black",
      xlab="Month", ylab="Relative importance (%)", 
      main="Relative importance of predictors over time (function-on-function)",
      ylim=c(0, max(commercial_importance, residential_importance, unemployment_importance, 
-       unemployment_vel_importance, wages_importance) * 1.5),
+       unemployment_vel_importance, wages_importance, cluster_importance) * 1.1),
      xaxt="n")
 axis(1, at=month_positions, labels=month.abb)
 lines(eval_points, residential_importance, lwd=2, col="red", lty=1)
 lines(eval_points, unemployment_importance, lwd=2, col="blue", lty=1)
-lines(eval_points, unemployment_vel_importance, lwd=2, col="darkgreen", lty=1)
-lines(eval_points, wages_importance, lwd=2, col="orange", lty=1)
+lines(eval_points, unemployment_vel_importance, lwd=2, col="orange", lty=1)
+lines(eval_points, wages_importance, lwd=2, col="darkgreen", lty=1)
+lines(eval_points, cluster_importance, lwd=2, col="cyan", lty=1)
 grid(NULL, NULL, lty=3, col="lightgray")
 
 legend("topright", 
        legend=c("Commercial Customers", "Residential Customers", 
-         "Unemployment", "Unemployment velocity", "Wages"), 
+         "Unemployment", "Unemployment velocity", "Wages", "Cluster"), 
        lty=1, 
-       col=c("black", "red", "blue", "darkgreen", "orange"),
+       col=c("black", "red", "blue", "orange", "darkgreen", "cyan"),
        bty="n")
 
 cat(sprintf("Mean importance of the count of commercial customers per person: %.2f%%\n", 
@@ -1826,7 +1822,18 @@ cat(sprintf("Mean importance of the count of residential customers per person: %
 cat(sprintf("Mean importance of unemployment: %.2f%%\n", mean(unemployment_importance)))
 cat(sprintf("Mean importance of unemployment velocity: %.2f%%\n", mean(unemployment_vel_importance)))
 cat(sprintf("Mean importance of wages: %.2f%%\n", mean(wages_importance)))
+cat(sprintf("Mean importance of cluster: %.2f%%\n", mean(cluster_importance)))
 
 ```
 
-The function-on-function relative importance analysis reveals significantly more complex seasonal dynamics compared to the function-on-scalar approach, with predictor hierarchies shifting substantially throughout the year. On average, the most important predictor is wages (34.74%), but with significant seasonal variations. The second most important predictor is unemployment velocity 24.47%, followed by commercial customer count per person (18.22%), unemployment (11.96%), and residential customer count per person (10.62%).
+The function-on-function relative importance analysis reveals significantly more complex seasonal dynamics compared to the function-on-scalar approach, with predictor hierarchies shifting substantially throughout the year. Cluster has the highest influence on consumption (67.27%). Out of the scalar predictors, the most important one is wages (14.47%), but with significant seasonal variations. The second most important predictor is unemployment velocity (8.48%), followed by commercial customer count per person (5.64%), unemployment (2.10%), and residential customer count per person (2.04%).
+
+#### Conclusions
+
+\begin{itemize}
+\item Overall $R^2=0.58$
+\item Model performance fluctuates significantly across seasons
+\item Best predictability: summer and winter months ($R^2 \approx 0.65$)
+\item Spring and autumn months are most challenging to predict ($R^2 \approx 0.1$)
+\item Additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months
+\end{itemize}
