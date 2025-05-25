@@ -1,7 +1,14 @@
 ---
 title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
+<<<<<<< HEAD
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+=======
 output: pdf_document
+>>>>>>> a69c87d769fc65307f5a3ffda9bbdf7584598f1c
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
@@ -22,6 +29,7 @@ library(readxl)
 library(viridis)
 library(knitr)
 library(tidyr)
+library(funFEM)
 library(reshape2)
 library(gridExtra)
 library(refund)
@@ -204,12 +212,15 @@ It can be seen from the map that high consumption municipalities are distributed
 
 ### Clustering
 
-#### finding optimal K
-```{r}
+Here we used funFEM function with the specified parameters for clustering Municipalities based on their electricity consumption trends throughout the year. Among the clustering methods tested (including fdahclust and fdakmeans), this one exhibited the best performance to cluster based on curve shape rather than amplitude.
+
+#### Finding optimal number of clusters (K).
+
+```{r, warning=FALSE}
 set.seed(123)
 
 res_v2 = funFEM(fd_obj_all_mun,K=2:5,model='AkjBk',init='kmeans',lambda=0,disp=TRUE)
-res_v2$allCriterions
+# res_v2$allCriterions
 plot(res_v2$allCriterions$K,res_v2$allCriterions$bic,type='b',xlab='K',main='BIC')
 res_v2$cls
 ```
@@ -217,8 +228,6 @@ res_v2$cls
 Optimal K was found to be 2.
 
 #### Clustering K = 2
-
-To identify distinct electricity consumption patters accross Lithuanian municiaplities, we employed performed k-means clustering with the AkjBk model, selecting $K=2$ based on Bayesian Information Criterion (BIC) optimization. The regularization parameter $\lambda$ was set to 0.
 
 ```{r}
 library(funFEM)
@@ -287,12 +296,14 @@ ggplot(map_clusters) +
     legend.text = element_text(size = 12)
   )
 ```
+Out of 60 municipalities 14 were assigned to Cluster 1 and the remaining 46 to Cluster 2.
 
-As can be seen in the map, municipalities in Cluster 1 are not clustered geographically.
+Curves in Cluster 2 exhibit U-shaped consumption pattern with lower values during summer months and rising consumption during winter. This is most likely directly linked to changes in heating needs between warm and cold periods. Meanwhile, in addition to heating trends, Cluster 1 also shows a distinct bump in electricity consumption during summer months. This cluster contains well know Lithuanian resorts (Birštonas, Druskininkai) and coastal municipalities (Neringa, Palanga, Klaipėda) suggesting that increase in consumption during summer could be due to increase in seasonal activities.
+
 
 ### Hypothesis testing
 
-In order to identify the time periods where differences between the two clusters occur, pointwise functional ANOVA was carried out with the 0.05 alpha level. Since only two clusters are being compared, post-hoc test result is not shown as it provides identical results to the pointwise ANOVA itself. 
+In order to identify the time periods where differences between the two clusters occur, pointwise functional ANOVA was carried out with the 0.05 alpha level. Since only two clusters are being compared with each other, post-hoc test result is not shown as it provides identical results to the pointwise ANOVA itself. 
 
 ##### fANOVA
 
@@ -309,10 +320,10 @@ fANOVA.pointwise <- function(data, groups, t.seq, alpha = 0.05) {
   pvals <- numeric(n_time)
   mean.p <- matrix(NA, ncol = n_groups, nrow = n_time)
   # Determine number of pairwise comparisons
-  combs <- combn(group_levels, 2)
-  perm <- ncol(combs)
-  Tukey.posthoc <- matrix(NA, ncol = perm, nrow = n_time)
-  colnames(Tukey.posthoc) <- apply(combs, 2, paste, collapse = " - ")
+  # combs <- combn(group_levels, 2)
+  # perm <- ncol(combs)
+  # Tukey.posthoc <- matrix(NA, ncol = perm, nrow = n_time)
+  # colnames(Tukey.posthoc) <- apply(combs, 2, paste, collapse = " - ")
   # Main loop: pointwise ANOVA and Tukey HSD
   for (i in 1:n_time) {
   dt <- data.frame(values = data[i, ], groups = groups)
@@ -323,7 +334,7 @@ fANOVA.pointwise <- function(data, groups, t.seq, alpha = 0.05) {
   summarise(mean_val = mean(values), .groups = "drop") %>%
   pull(mean_val)
   tukey_res <- TukeyHSD(av)$groups[, "p adj"]
-  Tukey.posthoc[i, ] <- tukey_res
+  # Tukey.posthoc[i, ] <- tukey_res
   }
   overall_mean <- rowMeans(data)
   ## --- Plotting --- ##
@@ -367,8 +378,11 @@ fANOVA.pointwise <- function(data, groups, t.seq, alpha = 0.05) {
 
 
 ##### Identifying time periods that differ significantly
+
+In order to to identify significant differences between the clusters based on the shapes of the curves rather than amplitude, each curve was centered separately. For every municipality, a mean of values was calculated and subtracted from each value. This way all curves are being centered around zero however pointwise differences remain. 
+
 ```{r}
-time_grid <- seq(1, 12, length.out = 200)  # finer time points over months
+time_grid <- seq(1, 12, length.out = 200) 
 elec_eval <- eval.fd(time_grid, fd_obj_all_mun)
 # Center **each curve** separately
 elec_eval_centered <- apply(elec_eval, 2, function(x) x - mean(x))
@@ -383,6 +397,7 @@ fANOVA.pointwise(
 )
 
 ```
+The pointwise comparisons identified that the clusters significantly differ in shape especially in spring and then in mid summer to fall, presumably when touristic activities are low before the season and then when it peaks during warm periods.
 
 #### PCA analysis
 ##### Harmonics, PCA scores and Reconstrunctions
