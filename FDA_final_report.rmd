@@ -16,6 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
 
 library(arrow)
 library(ggplot2)
+library(sf)
 library(dplyr)
 library(lubridate)
 library(ggbreak)
@@ -35,6 +36,7 @@ library(gridExtra)
 library(refund)
 library(refund.shiny)
 library(funFEM)
+library(viridis)
 ```
 
 #### Loading data
@@ -179,7 +181,6 @@ Municipality with highest energy consumption per person is Kazlų Rūda, followe
 To evaluate whether the energy consumption is related with geographical location, average consumption per person was plotted on the Lithuanian municipality map.
 
 ```{r, warning=FALSE}
-library(sf) 
 
 lt_map <- st_read("data/municipalities.geojson")
 lt_map$name <- lt_map$name %>%
@@ -230,7 +231,6 @@ Optimal K was found to be 2.
 #### Clustering K = 2
 
 ```{r}
-library(funFEM)
 
 # Clustering
 res_electricity <- funFEM(fd_obj_all_mun, K = 2, model = "AkjBk", init = "kmeans", lambda = 0, disp = TRUE)
@@ -313,7 +313,6 @@ In order to identify the time periods where differences between the two clusters
 fANOVA.pointwise <- function(data, groups, t.seq, alpha = 0.05) {
   if (length(groups) != ncol(data)) stop("Length of groups must match number of columns in data")
   if (!is.factor(groups)) groups <- factor(groups)
-  library(dplyr)
   n_time <- nrow(data)
   n_groups <- length(levels(groups))
   group_levels <- levels(groups)
@@ -386,8 +385,6 @@ time_grid <- seq(1, 12, length.out = 200)
 elec_eval <- eval.fd(time_grid, fd_obj_all_mun)
 # Center **each curve** separately
 elec_eval_centered <- apply(elec_eval, 2, function(x) x - mean(x))
-
-library(fda.usc)
 
 fANOVA.pointwise(
   data = elec_eval_centered,
@@ -884,8 +881,6 @@ energy_var_mat_c1 <- eval.bifd(monthtime, monthtime, energy_var.bifd_c1)
 # cluster 2
 energy_var.bifd_c2 <- var.fd(cluster2_fd)
 energy_var_mat_c2 <- eval.bifd(monthtime, monthtime, energy_var.bifd_c2)
-
-library(viridis)
 
 layout(matrix(c(1,2,3,4), nrow=1, ncol=4), widths=c(3,3,3,1))
 
