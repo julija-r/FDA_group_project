@@ -1774,7 +1774,8 @@ Unemployment velocity (Regression function 5) effect has a complex tendency, bei
 
 Effect of wages is positive throughout the year but drops in the middle of the year, resulting in a U-shaped seasonal pattern. This could be explained by the logic that wages effect is the highest when energy demand is the highest (during the heating season in Winter) and becomes less impactful when this demand is reduced.
 
-The graph visualizing how $R^2$ varies across the months suggests that summer-early autumn patterns are more predictable from the included variables than consumption in other months.
+The graph visualizing how $R^2$ varies across the months suggests that energy consumption is most predictable during summer when tourism, agriculture, and construction activities reach stable, peak operating patterns. In contrast, predicting energy consumption during the winter is more challenging because
+heating demand introduces weather-dependent variability. This suggests, that additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months.
 
 The plot showing confidence intervals for all coefficient functions reveals that only the wages effect is consistently statistically significant throughout the year as its confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
 
