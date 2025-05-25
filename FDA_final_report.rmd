@@ -1,10 +1,14 @@
 ---
 title: "2024 LT Electricity Consumption Functional Data Project"
 date: "`r Sys.Date()`"
+<<<<<<< HEAD
 output:
   pdf_document: default
   html_document:
     df_print: paged
+=======
+output: pdf_document
+>>>>>>> a69c87d769fc65307f5a3ffda9bbdf7584598f1c
 ---
 
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
@@ -30,6 +34,7 @@ library(reshape2)
 library(gridExtra)
 library(refund)
 library(refund.shiny)
+library(funFEM)
 ```
 
 #### Loading data
