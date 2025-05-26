@@ -141,8 +141,10 @@ smoothed_df <- bind_rows(smoothed_curves)
 
 # plotting all municipalities, I guess smoothing looks good?
 ggplot() +
-  geom_point(data = consumption_by_population_2024, aes(x = Month, y = kWh_per_person, color = Savivaldybe), alpha = 0.5) +
-  geom_line(data = smoothed_df, aes(x = Month, y = Consumption, color = Savivaldybe), linetype = "dashed") +
+  geom_point(data = consumption_by_population_2024, aes(x = Month, y = kWh_per_person, 
+    color = Savivaldybe), alpha = 0.5) +
+  geom_line(data = smoothed_df, aes(x = Month, y = Consumption, color = Savivaldybe), 
+    linetype = "dashed") +
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # converting 1-12 to month names
   labs(
     title = "Smoothed Electricity Consumption All Municipalities",
@@ -227,7 +229,8 @@ Optimal K was found to be 2.
 ```{r}
 
 # Clustering
-res_electricity <- funFEM(fd_obj_all_mun, K = 2, model = "AkjBk", init = "kmeans", lambda = 0, disp = TRUE)
+res_electricity <- funFEM(fd_obj_all_mun, K = 2, model = "AkjBk", init = "kmeans", 
+  lambda = 0, disp = TRUE)
 
 # Cluster mean curves
 fdmeans_electricity <- fd_obj_all_mun
@@ -492,7 +495,7 @@ municipalities_scores <- data.frame(
 # Color by PC1
 ggplot(municipalities_scores, aes(x = PC1, y = PC2, label = Municipality, color = PC1)) +
   geom_point(size = 2.5) +
-  geom_text_repel(size = 3, max.overlaps = 20, box.padding = 0.5, segment.color = "grey50") +  # better labels
+  geom_text_repel(size = 3, max.overlaps = 20, box.padding = 0.5, segment.color = "grey50") +
   scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
   labs(
     title = "PC1: Seasonal U-shape Strength | PC2: Complex seasonality Shift",
@@ -563,7 +566,8 @@ for (i in 1:4) {
   deform_plus <- mean_curve + harmonics_varimax[,i] * amplification_factor
   deform_minus <- mean_curve - harmonics_varimax[,i] * amplification_factor
   
-  plot(time_range, mean_curve, type = "l", lwd = 2, ylim = range(c(deform_plus, deform_minus, mean_curve)),
+  plot(time_range, mean_curve, type = "l", lwd = 2, ylim = range(c(deform_plus, 
+    deform_minus, mean_curve)),
        main = paste("Rot. PC", i),
        xlab = "Month", ylab = "Consumption")
   lines(time_range, deform_plus, lty = 2)
@@ -690,9 +694,11 @@ derivatives_df <- data.frame(
 derivatives_df <- na.omit(derivatives_df)
 
 # sort by first derivative
-derivatives_sorted_first <- derivatives_df[order(derivatives_df$First_Derivative, decreasing = TRUE), ]
+derivatives_sorted_first <- derivatives_df[order(derivatives_df$First_Derivative, 
+  decreasing = TRUE), ]
 # sort by second derivative
-derivatives_sorted_second <- derivatives_df[order(derivatives_df$Second_Derivative, decreasing = TRUE), ]
+derivatives_sorted_second <- derivatives_df[order(derivatives_df$Second_Derivative, 
+  decreasing = TRUE), ]
 
 # top municipalities by first derivative
 cat("Top municipalities in Cluster 1 by First Derivative at December:\n")
@@ -790,7 +796,8 @@ stddev_energy = std.fd(smooth_fd)
 par(mfrow=c(1,3), pty="s")
 
 # Plot all
-plot(smooth_fd, main = "All Municipalities", xlab = "Month", ylab = "Energy Consumption per Person (kWh)", 
+plot(smooth_fd, main = "All Municipalities", xlab = "Month", ylab = "Energy Consumption 
+  per Person (kWh)", 
   ylim = c(0, 800), lty = 1, col = "gray80", lwd = 1)
 
 # elementary pointwise mean and standard deviation
@@ -1100,7 +1107,8 @@ fboxplot(data = fts_object, plot.type = "functional",
 The dark gray band shows the median 50% region.
 
 ### Regression
-To understand how economic and industrial factors influence consumption behaviors throughout the year, we performed both function-on-scalar and function-on-function regression analysis. The dependant variable in our analysis was monthly per-capita energy consumption, while the predictors were unemployment rates, commercial and residential customer counts per person, and average wage in each municipality. The predictors were standardized to have mean 0 and standard deviation 1 to better capture the influence of predictors that have vastly different scales. Without standartization, wages would dominate the regression simply because of the scale, not beacuse of importance.
+
+To understand how economic and industrial factors influence consumption behaviors throughout the year, we performed both function-on-scalar and function-on-function regression analysis. The dependent variable in our analysis was monthly per-capita energy consumption, while the predictors were cluster label, unemployment rates, commercial and residential customer counts per person, and average wage in each municipality. The numerical predictors were standardized to have mean 0 and standard deviation 1 to better capture the influence of predictors that have vastly different scales. Without standardization, wages would dominate the regression simply because of the scale, not because of importance.
 
 #### Preparing functional data (unemployment)
 
@@ -1232,7 +1240,6 @@ colnames(df$residential_customers) <- colnames(df$consumption)
 
 ```
 
-
 #### Functional-on-scalar regression
 
 For function-on-scalar regression analysis we performed penalized flexible functional regression (pffr) to investigate how municipal characteristics influence electricity consumption patterns throughout the year. This approach estimates time-varying coefficient functions to reveal how the effects of predictors change seasonally.
@@ -1296,9 +1303,7 @@ $$Y_i(t) = \beta_0(t) + \beta_1(t) \cdot \text{Wages}_i + \beta_2(t) \cdot \text
 
 Based on low p-values, all regressors are statistically significant.
 
-Wages, count of commercial customers, and, surprisingly, unemployment have a positive coefficient, indicating that higher values of these predictors are related to higher consumption levels. Belonging to Cluster 1 also has a positive effect on consumption. Meanwhile, count of residential customers has negative coefficients, suggesting an opposite effect.
-
-The intercept captures baseline seasonal consumption patterns. The count of commercial customers coefficients show distinct seasonal patterns with peaks at the beginning of and the middle of the year, indicating that this regressor is more influential during those periods. This could be related to seasonal business cycle. Other independent variables show some variation throughout the year, except for he count of residential customers, which is almost constant year-round.
+The intercept captures baseline seasonal consumption patterns. Wages and, surprisingly, unemployment have a positive coefficient, indicating that higher values of these predictors are related to higher consumption levels. Belonging to Cluster 1 also has a positive effect on consumption. Meanwhile, count of residential customers has negative coefficients, suggesting an opposite effect. Count of commercial customers has a varying effect throughout the year, attaining positive coefficients during the summer and at the beginning of the year, and negative coefficient values in other months. This could be related to seasonal business cycle. Independent variables show some variation throughout the year, except for the count of residential customers, which is almost constant year-round.
 
 ```{r}
 # get predictions and transpose to match observed format
@@ -1369,8 +1374,8 @@ month_positions <- seq(1, length(eval_points), length.out = 12)
 plot(eval_points, commercial_importance_fosr, type="l", lwd=2, col="black",
      xlab="Month", ylab="Relative importance (%)", 
      main="Relative importance of predictors over time (function-on-scalar)",
-     ylim=c(0, max(commercial_importance_fosr, residential_importance_fosr, 
-                  unemployment_importance_fosr, wages_importance_fosr, cluster_importance_fosr) * 1.2),
+     ylim=c(0, max(commercial_importance_fosr, residential_importance_fosr, unemployment_importance_fosr, wages_importance_fosr, 
+       cluster_importance_fosr) * 1.2),
      xaxt="n")
 axis(1, at=month_positions, labels=month.abb)
 lines(eval_points, residential_importance_fosr, lwd=2, col="red", lty=1)
@@ -1472,7 +1477,6 @@ xfdlist <- list(
   cluster = df$cluster1_dummy
 )
 ```
-
 
 Additionally, after trying out several combinations of predictors, we included the first derivative (velocity) of unemployment into our model for better characterization of functional behavior.
 
@@ -1711,8 +1715,9 @@ SSE0 <- apply(resmat0^2, 1, sum)
 SSE1 <- apply(resmat^2, 1, sum)
 R2_by_time <- (SSE0-SSE1)/SSE0
 
-ylim2 <- c(min(0, min(commercial_coef), min(residential_coef), min(unemployment_coef), min(unemployment_vel_coef), min(cluster_coef)), 
-           max(commercial_coef, residential_coef, R2_by_time, unemployment_coef, unemployment_vel_coef, wages_coef, cluster_coef))
+ylim2 <- c(min(0, min(commercial_coef), min(residential_coef), min(unemployment_coef), min(unemployment_vel_coef), 
+  min(cluster_coef)), max(commercial_coef, residential_coef, R2_by_time, unemployment_coef, 
+    unemployment_vel_coef, wages_coef, cluster_coef))
 plot(eval_points, commercial_coef, lwd=2, xlab='', ylab='', ylim=ylim2, type='l',
      main='Effects', xaxt="n")
 axis(1, at=month_positions)
@@ -1723,7 +1728,8 @@ lines(eval_points, unemployment_coef, lty=1, col="orange")
 lines(eval_points, wages_coef, lty=1, col="darkgreen")
 lines(eval_points, cluster_coef, lty=1, col="cyan")
 legend("topleft", 
-       legend=c("Commercial effect", "Residential effect", "Unemployment effect", "Unemployment velocity effect", "Wages effect", "Cluster effect"), 
+       legend=c("Commercial effect", "Residential effect", "Unemployment effect", 
+         "Unemployment velocity effect", "Wages effect", "Cluster effect"), 
        lty=1, col=c("black", "red", "blue", "orange", "darkgreen", "cyan"), bty="n")
 
 op <- par(mfrow=c(1,1))
@@ -1772,16 +1778,15 @@ Residential customer effect (Regression function 3) is negative year-round, with
 
 Interestingly, unemployment rate (Regression function 4) has a positive effect on consumption in the first half of the year and becomes negative later, reaching the lowest value in November but quickly going back up towards the Winter holiday season. 
 
-Unemployment velocity (Regression function 5) effect has a complex tendency, being generally negative (reaching extreme negative effect during the Summer) but attaining positive values towards the end of the year.
+Unemployment velocity (Regression function 5) effect has a complex tendency, being generally negative (reaching extreme negative effect during the summer) but attaining positive values towards the end of the year.
 
 Effect of wages (Regression function 6) is strongly positive throughout the year but drops in the middle of the year, resulting in a U-shaped seasonal pattern. This could be explained by the logic that wages effect is the highest when energy demand is the highest (during the heating season in Winter) and becomes less impactful when this demand is reduced.
 
-The effect of belonging to Cluster 1 (Regression function 7) has a positive effect on energy consumption year-round and has a complex shape. It reaches the lowest point around June, and peaks around September and during the Winter months.
+The effect of belonging to Cluster 1 (Regression function 7) has a positive effect on energy consumption year-round and has a complex shape. It reaches the lowest point around June, and peaks around September and during the winter months.
 
-The graph visualizing how $R^2$ varies across the months suggests that energy consumption is most predictable during summer when tourism, agriculture, and construction activities reach stable, peak operating patterns. In contrast, predicting energy consumption during colder months is more challenging because
-heating demand introduces weather-dependent variability. This suggests, that additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months.
+The graph visualizing how $R^2$ varies across the months suggests that energy consumption is most predictable during summer (when tourism, agriculture, and construction activities reach stable, peak operating patterns) and winter. In contrast, predicting energy consumption during transition months is more challenging possibly because heating demand introduces weather-dependent variability. This suggests, that additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months.
 
-The plot showing confidence intervals for all coefficient functions reveals that only wages and cluster effect is consistently statistically significant throughout the year as its confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
+The plot showing confidence intervals for all coefficient functions reveals that only wages and cluster effect is consistently statistically significant throughout the year as their confidence intervals do not include zero at any point. Other predictors have a non-uniform significance throughout the year.
 
 ```{r}
 # relative importance of each predictor by month
