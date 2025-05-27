@@ -160,9 +160,9 @@ ggplot() +
     linetype = "dashed") +
   scale_x_continuous(breaks = 1:12, labels = month.abb) +  # converting 1-12 to month names
   labs(
-    title = "Smoothed Electricity Consumption All Municipalities",
+    title = "Smoothed Electricity Consumption per Person",
     x = "Month",
-    y = "Electricity Consumption (MWh)"
+    y = "kWh/person"
   ) +
   theme_minimal() +
   theme(legend.position = "none")
@@ -1869,11 +1869,13 @@ cat(sprintf("Mean importance of cluster: %.2f%%\n", mean(cluster_importance)))
 The function-on-function relative importance analysis reveals significantly more complex seasonal dynamics compared to the function-on-scalar approach, with predictor hierarchies shifting substantially throughout the year. Cluster has the highest influence on consumption (67.27%). Out of the scalar predictors, the most important one is wages (14.47%), but with significant seasonal variations. The second most important predictor is unemployment velocity (8.48%), followed by commercial customer count per person (5.64%), unemployment (2.10%), and residential customer count per person (2.04%).
 
 Summary of function-on-function regression model:
+\begin{itemize}
 \item Overall $R^2=0.58$
 \item Model performance fluctuates across seasons
 \item Best predictability: summer and winter months ($R^2 \approx 0.65$)
 \item Spring and autumn months are most challenging to predict ($R^2 \approx 0.55$)
 \item Additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months
+\end{itemize}
 
 #### Conclusions
 
