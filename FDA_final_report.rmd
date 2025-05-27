@@ -5,6 +5,13 @@ output:
   pdf_document: default
 ---
 
+### Summary
+
+In this analysis we employ functional data techniques to understand and characterize electricity consumption patterns across Lithuanian municipalities during 2024. Here we detect trend similarities and differences between the municipalities via clustering and outlier detection. The municipalities were grouped into 2 clusters based on seasonal patters, with Cluster 2 showing
+higher electricity consumption in winter months and lower in summer while
+Cluster 1 shows a significant rise in consumption in summer season, most likely due to differences in human behaviour across the municipalities. Specifically, Neringa and Palanga show a distinct bump in consumption during Summer as those coastal resorts are associated with higher touristic activity. Finally, we conduct different types of regression to identify most most important predictors for electricity consumption, which appear to be Cluster (most important) and Wages. 
+
+
 ```{r setup, include=FALSE, warning=FALSE, results='hide'}
 knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
 
@@ -34,6 +41,9 @@ library(viridis)
 ```
 
 #### Loading data
+
+The data was normalized in each municipality dividing consumption by population providing electricity consumption in kWh per person.
+
 ```{r, results='hide'}
 set.seed(6558765)
 
@@ -76,6 +86,8 @@ plot_all_municipalities
 
 #### Smoothing
 ##### Cubic B-splines 
+
+B-spline basis was used since the data is non-periodic.
 ```{r, warning = FALSE}
 # prepare data
 consumption_by_population_2024$Suvartojimo_laikotarpis <- as.Date(consumption_by_population_2024$Suvartojimo_laikotarpis)
@@ -85,11 +97,12 @@ consumption_by_population_2024$Month <- as.numeric(format(consumption_by_populat
 ```
 
 ```{r}
-# I found 6 to be optimal (not too smooth nor overfitting) maybe could be changed
 num_basis <- 6
 time_range <- range(consumption_by_population_2024$Month)
 basis <- create.bspline.basis(time_range, nbasis = num_basis, norder = 4) # cubic splines
 ```
+
+6 basis functions were found to be optimal for smoothing (neither oversmoothing nor overfitting the data) and cubic splines were chosen for flexibility.
 
 ##### fd object for all municipalities
 ```{r}
@@ -97,7 +110,7 @@ energy_matrix <- consumption_by_population_2024 %>%
   dplyr::select(Savivaldybe, Month, kWh_per_person) %>%
   dplyr::arrange(Month, Savivaldybe) %>%  # ensure consistent order
   tidyr::pivot_wider(names_from = Savivaldybe, values_from = kWh_per_person) %>%
-  dplyr::arrange(Month) %>%  # just to be safe
+  dplyr::arrange(Month) %>% 
   dplyr::select(-Month) %>%
   as.matrix()
 
@@ -139,7 +152,7 @@ for (municipality in municipalities) {
 # combining smoothed results
 smoothed_df <- bind_rows(smoothed_curves)
 
-# plotting all municipalities, I guess smoothing looks good?
+# plotting all municipalities
 ggplot() +
   geom_point(data = consumption_by_population_2024, aes(x = Month, y = kWh_per_person, 
     color = Savivaldybe), alpha = 0.5) +
@@ -1859,8 +1872,8 @@ The function-on-function relative importance analysis reveals significantly more
 
 \begin{itemize}
 \item Overall $R^2=0.58$
-\item Model performance fluctuates significantly across seasons
+\item Model performance fluctuates across seasons
 \item Best predictability: summer and winter months ($R^2 \approx 0.65$)
-\item Spring and autumn months are most challenging to predict ($R^2 \approx 0.1$)
+\item Spring and autumn months are most challenging to predict ($R^2 \approx 0.55$)
 \item Additional predictors (e.g., weather temperature) could potentially help to better predict energy consumption during those months
 \end{itemize}
